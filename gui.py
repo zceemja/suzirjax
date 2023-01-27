@@ -5,7 +5,6 @@ from PyQt5.QtWidgets import *
 from jax import numpy as jnp
 from matplotlib.animation import FuncAnimation
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
-import matplotlib as mpl
 from matplotlib import pyplot as plt
 import numpy as np
 from gui_helpers import *

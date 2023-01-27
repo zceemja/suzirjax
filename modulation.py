@@ -1,36 +1,51 @@
 import numpy as np
 import re
-import os
+from jax import numpy as jnp
+import utils
 
 __MOD = {}
 
 MODULATIONS = ["ASK", "PAM", "PSK", "QAM", "APSK"]
 
 
-def graycode(n: int):
-    j = np.arange(n, dtype=int)
+def graycode(o):
+    j = jnp.arange(o, dtype=int)
     return j ^ (j >> 1)
+
+
+def relabel(x: jnp.ndarray):
+    d = x.shape[0]
+    n = int(jnp.log2(x.shape[1] * 2 ** d))
+
+    def _maprecursive(_x, _m):
+        if _x.shape[0] == 1:
+            return jnp.zeros(_x.size).at[jnp.argsort(_x)].set(graycode(2 ** _m[0]))
+        else:
+            _mmap = jnp.zeros(((2 ** _m.sum()).astype(int),), dtype=int)
+            mmap_d = graycode(2 ** _m[0])
+            argsort = jnp.lexsort(jnp.flipud(_x))
+            for i in jnp.arange(2 ** _m[0]):
+                idx = argsort[(jnp.arange(2 ** _m[1:].sum()) + i * 2 ** _m[1:].sum()).astype(int)]
+                _mmap = _mmap.at[idx].set(2 ** _m[1:].sum() * mmap_d[i] + _maprecursive(_x[1:, idx], _m[1:]))
+            return _mmap
+
+    m = jnp.floor(n / d) * jnp.ones((d,))
+    mlow = int(n - m.sum())
+    m = m.at[-mlow:].set(m[-mlow:] + 1).astype(int)
+    mmap = _maprecursive(x, m)
+    # if abs(jnp.linalg.det(jnp.eye(self.M)[mmap])) != 1:
+    #     raise ValueError('Failed to relabel the constellation points.')
+    return jnp.take(x, mmap, axis=-1)
 
 
 def make_qam(order: int):
     # Can't be asked to properly implement this
     # File has precomputed output from matlab qammod function
     if len(__MOD) == 0:
-        mods = np.load(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'resources', 'mod.npz'))
+        mods = np.load(utils.get_resource('mod.npz'))
         for i in range(2, 11):
             __MOD[f'{1 << i}QAM'] = mods[f'qam{1 << i}']
     return __MOD[str(order) + 'QAM']
-
-    # m = int(np.log2(order))
-    # im = -(-m // 2)
-    # qm = m // 2
-    # if im != qm:
-    #     # TODO: some special logic
-    # i = np.arange(-m + 1, m, step=2, dtype=int)
-    # q = np.arange(-m + 1, m, step=2, dtype=int)
-    # c = (i + 1j * q[None].T).flatten()
-    # c[graycode(order)] = c
-    # return c
 
 
 def make_apsk(order: int):
@@ -96,5 +111,3 @@ def get_modulation(name: str, unit_power=True) -> np.ndarray:
     if unit_power:
         c = c / c.real.max()
     return c
-
-

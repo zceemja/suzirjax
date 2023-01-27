@@ -1,12 +1,11 @@
 import jax
 import numpy as np
-from PyQt5.QtWidgets import QWidget
 from jax import numpy as jnp
 from jax.scipy import optimize
 import optax
 from gui_helpers import *
+from PyQt5.QtWidgets import QWidget
 from typing import List, Tuple
-
 
 
 def bitmap_indices(bmap: jnp.ndarray) -> jnp.ndarray:

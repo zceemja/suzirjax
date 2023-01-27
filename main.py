@@ -5,8 +5,9 @@ import time
 from PyQt5.QtCore import Qt, QThread
 from PyQt5.QtGui import QPixmap, QIcon
 from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QDialog, QDesktopWidget
+import utils
 
-LOGO = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'resources', 'logo.png')
+LOGO = utils.get_resource('logo.png')
 
 
 class LoadingThread(QThread):
