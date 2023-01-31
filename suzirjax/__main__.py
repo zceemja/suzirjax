@@ -1,4 +1,3 @@
-import os
 import sys
 import time
 
@@ -53,7 +52,7 @@ class SplashWindow(QDialog):
 
         text.setStyleSheet('font-size: 24px;')
 
-        self.setWindowTitle('OFC Demo')
+        self.setWindowTitle('Suzirjax')
         self.setWindowIcon(QIcon(LOGO))
         self.setGeometry(0, 0, pixmap.width(), pixmap.height())
         self.resize(pixmap.width(), pixmap.height())

@@ -1,5 +1,13 @@
+# Make whitelist
 *
 !.gitignore
-!*.py
+!README.md
+!requirements.txt
+
+# Python code
+!suzirjax
+!suzirjax/*.py
+
+# Resources
 !resources
 !resources/*

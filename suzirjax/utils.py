@@ -7,7 +7,7 @@ _cdir = path.dirname(path.realpath(__file__))
 
 
 def get_resource(name) -> str:
-    return path.join(_cdir, "resources", name)
+    return path.join(_cdir, "..", "resources", name)
 
 
 # Source: https://www.kennethmoreland.com/color-advice/
@@ -23,7 +23,7 @@ kindlmann_cmap = LinearSegmentedColormap(
 )
 
 # Source: uceeesi@ucl.ac.uk
-sillekens_cmap = ListedColormap(np.load(path.join(_cdir, "resources", "DrSillekensCMap.npy")), name='sillekens')
+sillekens_cmap = ListedColormap(np.load(get_resource("DrSillekensCMap.npy")), name='sillekens')
 
 
 def register_cmaps():

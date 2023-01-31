@@ -161,7 +161,7 @@ if __name__ == '__main__':
     class ApplicationWindow(QMainWindow):
         def __init__(self):
             super().__init__()
-            self.setWindowTitle('OFC Demo')
+            self.setWindowTitle('Suzirjax')
             self.setCentralWidget(ApplicationWidget(self))
 
             centre_point = QDesktopWidget().availableGeometry().center()
