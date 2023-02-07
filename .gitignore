@@ -11,3 +11,29 @@
 # Resources
 !resources
 !resources/*
+
+# Hardware
+!hardware
+!hardware/*.md
+!hardware/*.toml
+!hardware/*.xpr
+!hardware/scripts
+!hardware/scripts/*.py
+!hardware/scripts/*.sh
+!hardware/**/Makefile
+!hardware/suzirjax.srcs
+
+# Hardware constraints
+!hardware/suzirjax.srcs/constrs_*
+!hardware/suzirjax.srcs/constrs_*/*
+!hardware/suzirjax.srcs/constrs_*/**/*.xdc
+
+# Hardware IP sources
+!hardware/suzirjax.srcs/sources_*
+!hardware/suzirjax.srcs/sources_*/*
+!hardware/suzirjax.srcs/sources_*/ip/*
+!hardware/suzirjax.srcs/sources_*/ip/**/*.xci
+
+# Hardware HDL sources
+!hardware/suzirjax.srcs/**/*.v
+!hardware/suzirjax.srcs/**/*.sv

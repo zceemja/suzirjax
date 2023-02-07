@@ -1,0 +1,7 @@
+
+[option]
+prefix_label = ""
+
+
+[rules]
+prefix_module = false
