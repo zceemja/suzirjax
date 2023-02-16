@@ -5,7 +5,7 @@ from jax import numpy as jnp
 from gui_helpers import *
 from typing import Tuple
 from PyQt5.QtWidgets import QWidget
-
+from scipy.constants import c
 
 class Channel:
     NAME: str
@@ -35,12 +35,19 @@ class AWGNChannel(Channel):
     def make_gui(self) -> QWidget:
         return FLayout(
             ("SNR (dB)", make_float_input(-50, 50, 0.1, bind=self.data.bind("snr"))),
+            ("SNR", make_label(formatting='{:.3f}dB', bind=self.data.bind("snr_msq", 0.))),
         )
 
     def propagate(self, tx: jnp.ndarray) -> Tuple[jnp.ndarray, float]:
         self.key, key = jax.random.split(self.key)
         noise = jax.random.normal(key, tx.shape) * self.sigma
-        return tx + noise * (2 ** -.5), self.data['snr']
+        rx = tx + noise * (2 ** -.5)
+        snr = (
+                    jnp.sum(jnp.abs(tx.flatten()) ** 2, axis=-1) /
+                    jnp.sum(jnp.abs(rx.flatten() - tx.flatten()) ** 2, axis=-1)
+            ).mean()
+        self.data['snr_msq'] = 10 * jnp.log10(snr)
+        return rx, self.data['snr_msq']
 
 
 class PCAWGNChannel(Channel):
@@ -73,8 +80,7 @@ class PCAWGNChannel(Channel):
             ("Noise Figure (dB)", make_float_input(-50, 50, 0.1, bind=self.data.bind("noise"))),
             ("Sample Rate (GHz)", make_float_input(0.001, 500, 1, bind=self.data.bind("fs", 25))),
             ("Linewidth (kHz)", make_float_input(1e-3, 1e6, 10, bind=self.data.bind("linewidth", ))),
-            ("SNR", make_label(formatting='{:.3f}dB', bind=self.data.bind("snr", 0.))),
-
+            ("SNR", make_label(formatting='{:.3f}dB', bind=self.data.bind("snr_msq", 0.))),
         )
 
     def propagate(self, tx: jnp.ndarray) -> Tuple[jnp.ndarray, float]:
@@ -88,8 +94,8 @@ class PCAWGNChannel(Channel):
                     jnp.sum(jnp.abs(tx) ** 2, axis=-1) /
                     jnp.sum(jnp.abs(rx - tx) ** 2, axis=-1)
             )
-        self.data['snr'] = 10 * jnp.log10(snr)
-        return jnp.array([rx.real, rx.imag]).T, self.data['snr']
+        self.data['snr_msq'] = 10 * jnp.log10(snr)
+        return jnp.array([rx.real, rx.imag]).T, self.data['snr_msq']
 
 
 class FibreChannel(Channel):
@@ -129,7 +135,6 @@ class FibreChannel(Channel):
         fs = self.data['symbol_rate'] * 1e9
         dispersion = self.data['dispersion'] * 1e9
         ref_lambda = self.data['ref_lambda'] * 1e9
-        c = 299792458.0
 
         ff = jnp.fft.fftfreq(signal.shape[-1], d=1 / fs)
         beta2 = -dispersion * ref_lambda ** 2 / (2 * jnp.pi * c)

@@ -1,7 +1,6 @@
 import jax
 import numpy as np
 from jax import numpy as jnp
-from jax.scipy import optimize
 import optax
 from gui_helpers import *
 from PyQt5.QtWidgets import QWidget
@@ -93,22 +92,27 @@ class Optimiser:
 class GradientDescentOpt(Optimiser):
     NAME = 'Gradient Descent'
 
-    def make_gui(self) -> QWidget:
-        return FLayout(
-            ("GMI", make_label(formatting='{:.3f}', bind=self.data.bind("gmi", -np.Inf))),
-            ("||grad GMI||", make_label(formatting='{:.3f}', bind=self.data.bind("grad_gmi", 0.))),
-            ("Learning rate (10^n)", make_float_input(-6, 2, 0.1, bind=self.data.bind("learning_rate", -1.))),
-            ("Allow decrease", make_checkbox(bind=self.data.bind("allow_decrease", True))),
-        )
-
     def _extra_gui_elements(self) -> List[Tuple[str, QWidget]]:
         return [
+            ("GMI (precise)", make_label(formatting='{:.5f}', bind=self.data.bind("gmi_f32", -np.Inf))),
+            ("GMI error", make_label(formatting='{:.6f}', bind=self.data.bind("gmi_delta", -np.Inf))),
             ("||grad GMI||", make_label(formatting='{:.3f}', bind=self.data.bind("grad_gmi", 0.))),
             ("Learning rate (10^n)", make_float_input(-6, 2, 0.1, bind=self.data.bind("learning_rate", -1.))),
         ]
 
     def optimise(self, const, rx, tx_bits, snr) -> Tuple[jnp.ndarray, float]:
-        gmi, gmi_grad = jax.value_and_grad(self.gmi_max_log)(const, rx, tx_bits, snr)
+        dtype = jnp.float16
+        gmi, gmi_grad = jax.value_and_grad(self.gmi_max_log)(
+            const.astype(dtype),
+            rx.astype(dtype),
+            tx_bits,
+            snr.astype(dtype)
+        )
+        gmi = gmi.astype(jnp.float32)
+        gmi_grad = gmi_grad.astype(jnp.float32)
+
+        self.data['gmi_f32'] = jax.jit(self.gmi_max_log)(const, rx, tx_bits, snr)
+        self.data['gmi_delta'] = abs(self.data['gmi_f32'] - gmi)
         self.data['grad_gmi'] = jnp.sqrt((gmi_grad ** 2).sum())
         return const + (10 ** self.data['learning_rate'] * gmi_grad), gmi
 
@@ -140,31 +144,31 @@ class AdamOpt(Optimiser):
         return const, gmi
 
 
-class SM3Opt(AdamOpt):
-    NAME = 'SM3'
-
-    def __init__(self, data: Connector):
-        super().__init__(data)
-        self.optimiser = optax.sm3(0.01)
-
-
-class AdaFactorOpt(AdamOpt):
-    NAME = 'AdaFactor'
-
-    def __init__(self, data: Connector):
-        super().__init__(data)
-        self.optimiser = optax.adafactor()
+# class SM3Opt(AdamOpt):
+#     NAME = 'SM3'
+#
+#     def __init__(self, data: Connector):
+#         super().__init__(data)
+#         self.optimiser = optax.sm3(0.01)
 
 
-class BFGSOpt(Optimiser):
-    NAME = 'BFGS'
-
-    def optimise(self, const, rx, tx_bits, snr) -> Tuple[jnp.ndarray, float]:
-        res = optimize.minimize(
-            lambda x, *args: -self.gmi_max_log(x.reshape((-1, 2)), *args), const.flatten(),
-            args=(rx, tx_bits, snr), method='BFGS')
-        const = res.x.reshape((-1, 2))
-        return const, -res.fun
+# class AdaFactorOpt(AdamOpt):
+#     NAME = 'AdaFactor'
+#
+#     def __init__(self, data: Connector):
+#         super().__init__(data)
+#         self.optimiser = optax.adafactor()
 
 
-OPTIMISERS = [Optimiser, GradientDescentOpt, AdamOpt, SM3Opt, AdaFactorOpt, BFGSOpt]
+# class BFGSOpt(Optimiser):
+#     NAME = 'BFGS'
+#
+#     def optimise(self, const, rx, tx_bits, snr) -> Tuple[jnp.ndarray, float]:
+#         res = optimize.minimize(
+#             lambda x, *args: -self.gmi_max_log(x.reshape((-1, 2)), *args), const.flatten(),
+#             args=(rx, tx_bits, snr), method='BFGS')
+#         const = res.x.reshape((-1, 2))
+#         return const, -res.fun
+
+
+OPTIMISERS = [Optimiser, GradientDescentOpt, AdamOpt]
