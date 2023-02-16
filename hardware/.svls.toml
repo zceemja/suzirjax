@@ -1,8 +1,0 @@
-[verilog]
-include_paths = [
-    "suzirjax.srcs/sources_1/new",
-    "suzirjax.gen/sources_1/ip",
-]
-
-[option]
-linter = true
