@@ -5,6 +5,7 @@ from PyQt5.QtWidgets import QWidget
 import jax
 from jax import numpy as jnp
 import time
+from typing import Tuple
 
 
 class AWGNChannel(Channel):
