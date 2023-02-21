@@ -80,6 +80,11 @@ class Connector:
     def __setitem__(self, key, value):
         return self.set(key, value)
 
+    def copy(self):
+        ret = Connector()
+        ret.data = self.data.copy()
+        return ret
+
 
 def make_widget_layout(layout, widgets, parent=None, widget_class=QWidget):
     for w in widgets:
@@ -115,19 +120,19 @@ def FLayout(*widgets: Tuple[str | QWidget, QWidget], parent=None) -> QWidget:
 
 
 @export
-def make_dialog(title, *widgets, parent=None):
+def make_dialog(title, *widgets, parent=None, buttons=QDialogButtonBox.Ok | QDialogButtonBox.Cancel):
     dlg = QDialog(parent)
     dlg.setWindowTitle(title)
 
     layout = QVBoxLayout()
-    bbox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-    bbox.accepted.connect(dlg.accept)
-    bbox.rejected.connect(dlg.reject)
-
     for w in widgets:
         layout.addWidget(w)
 
-    layout.addWidget(bbox)
+    if buttons is not None:
+        dlg.bbox = QDialogButtonBox(buttons)
+        dlg.bbox.accepted.connect(dlg.accept)
+        dlg.bbox.rejected.connect(dlg.reject)
+        layout.addWidget(dlg.bbox)
     dlg.setLayout(layout)
     return dlg
 

@@ -3,10 +3,9 @@ from os import path
 import matplotlib
 from matplotlib.colors import LinearSegmentedColormap, ListedColormap
 
-_cdir = path.dirname(path.realpath(__file__))
-
 
 def get_resource(name) -> str:
+    _cdir = path.dirname(path.realpath(__file__))
     return path.join(_cdir, "..", "resources", name)
 
 
