@@ -15,10 +15,15 @@ def norm(x: jnp.ndarray) -> jnp.ndarray:
     return x / p
 
 
+# Will be different for GPU/CPU capable machines
+jax_arr_type = type(jnp.array([]))
+
+
 class SimulationSignal(QObject):
-    result = pyqtSignal(jnp.DeviceArray, jnp.DeviceArray)
+    result = pyqtSignal(jax_arr_type, jax_arr_type)
     start = pyqtSignal(float)
     complete = pyqtSignal()
+
 
 class SimulationWorker(QThread):
     HIST_LIM = 2
