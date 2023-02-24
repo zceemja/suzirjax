@@ -1,6 +1,8 @@
 import os
+import queue
 import time
 
+import jax
 import socketio
 
 from gui_helpers import *
@@ -22,10 +24,15 @@ class RemoteChannel(Channel):
         self.pinger.timeout.connect(self._ping)
         self.btn_connect = QPushButton('Connect', self.parent)
         self.btn_connect.clicked.connect(self._btn_connect)
+        self.queue = queue.Queue(maxsize=1)
+
+        self.data.on('linewidth', lambda val: self._send_config('linewidth', val * 1e3), now=False)
+        self.data.on('snr', lambda val: self._send_config('snr', val), now=False)
 
         @self.sio.event
         def connect():
             self.data['conn'] = True
+            self.sio.emit('config', {'linewidth': self.data['linewidth'] * 1e3, 'snr': self.data['snr']})
             self.btn_connect.setDisabled(False)
             self.btn_connect.setText('Disconnect')
 
@@ -34,17 +41,27 @@ class RemoteChannel(Channel):
             self.data['conn'] = False
             self.btn_connect.setText('Connect')
 
-        @self.sio.event
-        def connect_error(data):
-            print("The connection failed!")
+        # @self.sio.event
+        # def connect_error(data):
+        #     make_dialog("Remote connection", QLabel("The connection failed!"), parent=self.parent, buttons=QDialogButtonBox.Close).exec()
 
         @self.sio.event
         def pong(data):
-            print(data)
+            t = int.from_bytes(data, 'little')
+            t = (time.time_ns() - t) / 1e6
+            self.data["ping"] = f'{t:.1f}ms' if t > 1. else f'{t * 1e3:.0f}µs'
+
+        @self.sio.event
+        def rx(rx_data, snr):
+            self.queue.put((bytes_to_array(rx_data), bytes_to_array(snr)))
 
         @self.sio.on('*')
         def catch_all(event, data):
             pass
+
+    def _send_config(self, name, val):
+        if self.sio.connected:
+            self.sio.emit('config', {name: val})
 
     def _btn_connect(self, _):
         if self.sio.connected:
@@ -55,11 +72,6 @@ class RemoteChannel(Channel):
     def _ping(self):
         if self.sio.connected:
             self.sio.emit('ping', time.time_ns().to_bytes(8, 'little'))
-            # t = (time.time_ns() - t) / 1e6
-            # if t > 1.:
-            #     self.data["ping"] = f'{t:.1f}ms'
-            # else:
-            #     self.data["ping"] = f'{t * 1e3:.0f}µs'
         else:
             self.data["ping"] = f'-'
 
@@ -85,9 +97,30 @@ class RemoteChannel(Channel):
         return FLayout(
             ('', self.btn_connect),
             ("Ping", make_label(bind=self.data.bind("ping", '-'))),
+            ("SNR Est (dB)", make_label(bind=self.data.bind("snr_est", '- / -'))),
+            ("SNR (dB)", make_float_input(-10, 300, 1, bind=self.data.bind("snr", 30))),
+            ("Linewidth (kHz)", make_float_input(1, 1e5, 10, bind=self.data.bind("linewidth", 100))),
         )
 
-    def propagate(self, const: jnp.ndarray, tx: jnp.ndarray) -> Tuple[jnp.ndarray, float]:
-        if self.sio.connected:
-            return tx, 0
+    def propagate(self, const: jnp.ndarray, rng_key: int, seq_len: int) -> Tuple[jnp.ndarray, float]:
 
+        if not self.sio.connected:
+            return tx[0], 0
+        self.sio.emit('tx', data=(array_to_bytes(const), rng_key, seq_len))
+        rx, snr = self.queue.get(True)
+        self.data['snr_est'] = f'{snr[0]:.1f} / {snr[1]:.1f}'
+        return rx, snr[0]
+
+
+def array_to_bytes(arr: jnp.ndarray) -> bytes:
+    header = f"{str(arr.dtype)}&{','.join([str(a) for a in arr.shape])}".encode('ascii')
+    header = len(header).to_bytes(4, 'little') + header
+    return header + arr.ravel().tobytes()
+
+
+def bytes_to_array(data: bytes) -> jnp.ndarray:
+    header_len = int.from_bytes(data[:4], 'little')
+    header = data[4:4+header_len].decode('ascii').split('&')
+    dtype = header[0]
+    shape = tuple(int(i) for i in header[1].split(','))
+    return jnp.frombuffer(data[4+header_len:], dtype).reshape(shape)

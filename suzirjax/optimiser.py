@@ -80,7 +80,7 @@ class Optimiser:
             # Assume just sending all same bits in repeat
             tx_bits = jnp.tile(self.bmap, (rx.shape[0] // self.M, 1))
         else:
-            tx_bits = jnp.take(self.bmap, tx_seq)
+            tx_bits = jnp.take(self.bmap, tx_seq, axis=0)
 
         new_const, gmi = self.optimise(const, rx, tx_bits, snr)
         if not self.data['allow_decrease'] and gmi < self.data.get('gmi'):
@@ -120,9 +120,9 @@ class GradientDescentOpt(Optimiser):
 class AdamOpt(Optimiser):
     NAME = 'ADAM'
 
-    def __init__(self, data: Connector):
+    def __init__(self, data: Connector, learning_rate=0.01):
         super().__init__(data)
-        self.optimiser = optax.adam(0.01)
+        self.optimiser = optax.adam(learning_rate)
         self.opt_state = None
 
     def _update_points(self, M):

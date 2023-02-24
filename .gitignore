@@ -9,6 +9,7 @@
 !suzirjax/**
 !suzirjax/*.py
 !suzirjax/**/*.py
+*.mp4
 
 # Resources
 !resources

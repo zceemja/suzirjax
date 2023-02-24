@@ -26,16 +26,18 @@ class AWGNChannel(Channel):
             ("SNR", make_label(formatting='{:.3f}dB', bind=self.data.bind("snr_msq", 0.))),
         )
 
-    def propagate(self, const: jnp.ndarray, tx: jnp.ndarray) -> Tuple[jnp.ndarray, float]:
+    def propagate(self, const: jnp.ndarray, rng_key: int, seq_len: int) -> Tuple[jnp.ndarray, float]:
         self.key, key = jax.random.split(self.key)
-        noise = jax.random.normal(key, tx.shape) * self.sigma
-        rx = tx + noise * (2 ** -.5)
-        snr = (
-                    jnp.sum(jnp.abs(tx.flatten()) ** 2, axis=-1) /
-                    jnp.sum(jnp.abs(rx.flatten() - tx.flatten()) ** 2, axis=-1)
+        tx = self.get_tx(const, rng_key, seq_len)[1][0]
+        # tx = jnp.array([tx.real, tx.imag])
+        noise = jax.random.normal(key, tx.shape, dtype=complex) * self.sigma
+        rx = tx + noise  # * (2 ** -.5)
+        snr = 10 * jnp.log10(
+                    jnp.sum(jnp.abs(tx) ** 2, axis=-1) /
+                    jnp.sum(jnp.abs(rx - tx) ** 2, axis=-1)
             ).mean()
-        self.data['snr_msq'] = 10 * jnp.log10(snr)
-        return rx, self.data['snr_msq']
+        self.data['snr_msq'] = snr
+        return jnp.array([rx.real, rx.imag]).T, snr
 
 
 class PCAWGNChannel(Channel):
@@ -71,9 +73,9 @@ class PCAWGNChannel(Channel):
             ("SNR", make_label(formatting='{:.3f}dB', bind=self.data.bind("snr_msq", 0.))),
         )
 
-    def propagate(self,  const: jnp.ndarray, tx: jnp.ndarray) -> Tuple[jnp.ndarray, float]:
+    def propagate(self, const: jnp.ndarray, rng_key: int, seq_len: int) -> Tuple[jnp.ndarray, float]:
         self.key, key1, key2 = jax.random.split(self.key, num=3)
-        tx = tx[:, 0] + 1j * tx[:, 1]
+        tx = self.get_tx(const, rng_key, seq_len)[1][0]
         noise = jax.random.normal(key1, shape=tx.shape, dtype=tx.dtype) * self.sigma * (2 ** -.5)
         # phase = jnp.cumsum(, axis=-1)
         phase = jnp.exp(1j * jax.random.normal(key2, shape=tx.shape) * self.std)

@@ -26,7 +26,7 @@ class SimulationSignal(QObject):
 
 
 class SimulationWorker(QThread):
-    HIST_LIM = 2
+    HIST_LIM = 1 + 2 ** -.5
     HIST_BINS = 128
 
     def __init__(self, data: Connector, const: jnp.ndarray, parent=None):
@@ -73,16 +73,17 @@ class SimulationWorker(QThread):
                 [-self.HIST_LIM, self.HIST_LIM], [-self.HIST_LIM, self.HIST_LIM]
             ]))
         # d[d < 1] = np.nan
-        d /= jnp.log2(rx.shape[0]) * self.data['mod_points']
+        # d /= jnp.log2(rx.shape[0]) * self.data['mod_points']
         return d.T
 
     def simulate(self):
         self.data.copy()
         const = self._const.copy()
 
-        seq = (1 << (self.data['seq_length'])) // self.data['mod_points']  # Do random instead?
-        tx = jnp.tile(const, (seq, 1))
-        rx, snr = self.data['channel'].propagate(const, tx)
+        # seq = (1 << (self.data['seq_length'])) // self.data['mod_points']  # Do random instead?
+        # tx = jnp.tile(const, (seq, 1))
+        rng_key = 312
+        rx, snr = self.data['channel'].propagate(const, rng_key, 1 << self.data['seq_length'])
         const = jax.device_put(self.data['optimiser'].update(const, rx, snr))
 
         # Something is going terribly wrong
@@ -108,10 +109,9 @@ class SimulationWorker(QThread):
             t = (time.time_ns() - t) / 1e9
             self.timing = t
             self.signal.complete.emit()
-            interval = int((1 / self.fps - t) * 1e3)
+            interval = max(int((1 / self.fps - t) * 1e3), 5)
             if not self.paused:
-                if interval > 0:
-                    QThread.msleep(interval)
+                QThread.msleep(interval)
                 try:
                     self.single()
                 except ValueError:

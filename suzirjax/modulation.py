@@ -106,6 +106,8 @@ def get_modulation(name: str, unit_power=True) -> np.ndarray:
         c = make_pam(points)
     elif name == 'QAM':
         c = make_qam(points)
+    elif name == 'RAND':
+        c = np.random.uniform(-1., 1., points) + 1j * np.random.uniform(-1., 1., points)
     else:
         raise ValueError(f"Unknown modulation name '{name}'")
     if unit_power:

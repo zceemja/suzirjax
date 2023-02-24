@@ -7,8 +7,9 @@ from PyQt5.QtCore import QTimer
 from gui_helpers import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib import pyplot as plt
+import matplotlib
 import numpy as np
 from channels import CHANNELS
 from modulation import MODULATIONS, get_modulation
@@ -16,6 +17,7 @@ from optimiser import OPTIMISERS
 from simulation import SimulationWorker
 from utils import register_cmaps
 
+matplotlib.use('Qt5Agg')
 register_cmaps()
 
 
@@ -41,12 +43,11 @@ class ApplicationWidget(QFrame):
         self.progress = QProgressBar(self)
         self.progress_timer = QTimer()
         self.sim: SimulationWorker = None
-        self.initialise_sim()
-        self.sim.single()
 
+        self.start_stop_btn = make_button("Start", self.start_stop, self)
         self.control_widget = VLayout(
             FLayout(
-                ("Seq. Length (2^n)", make_int_input(4, 20, bind=self.data.bind("seq_length", 10))),
+                ("Seq. Length (2^n)", make_int_input(11, 14, bind=self.data.bind("seq_length", 11))),
                 ("Channel", make_combo_dict(
                     self.channels, bind=self.data.bind("channel",  self.channels[CHANNELS[0].NAME]))),
                 ("Optimiser", make_combo_dict(
@@ -65,18 +66,25 @@ class ApplicationWidget(QFrame):
             ],
             make_button("New Constellation", self.new_constellation, self),
             make_button("Single", lambda _: self.sim.single(), self),
-            make_button("Start", self.start_stop, self),
+            self.start_stop_btn,
             parent=self
         )
         self.data.on("channel", lambda ch: ch.initialise())
         QApplication.instance().aboutToQuit.connect(self.before_quit)
-        self.shortcut = QShortcut(QKeySequence("Ctrl+Space"), self)
-        self.shortcut.activated.connect(self.sim.single)
+
+        self.initialise_sim()
+        self.shortcuts = [
+            QShortcut(QKeySequence("Ctrl+Space"), self),
+            QShortcut(QKeySequence("Escape"), self),
+        ]
+        self.shortcuts[0].activated.connect(self.sim.single)
+        self.shortcuts[1].activated.connect(self.stop)
 
         layout.addWidget(HLayout(
             self.control_widget, self.const_canvas, parent=self
         ))
         layout.addWidget(self.progress)
+        self.sim.single()
 
     def _progress_stop(self):
         self.progress_timer.stop()
@@ -117,6 +125,11 @@ class ApplicationWidget(QFrame):
         self.sim.quit()
         self.sim.wait()
 
+    def stop(self):
+        self.data['running'] = False
+        self.sim.close()
+        self.start_stop_btn.setText("Start")
+
     def start_stop(self, btn: QPushButton):
         btn.setText("Start" if self.data['running'] else "Stop")
         self.data['running'] = not self.data['running']
@@ -147,11 +160,11 @@ class ApplicationWidget(QFrame):
 
 
 class ConstellationCanvas(FigureCanvasQTAgg):
-    LIM = 1 + 2 ** -.5
+    LIM = 1 + 2 ** -.5  # Should match simulation.py HIST_LIM
     TEXT_OFFSET = 0.05
 
     def __init__(self, data: Connector):
-        super().__init__(plt.Figure())
+        super().__init__()
         self.data = data
         self.ax = self.figure.subplots()
         self.ax.set_ylim(ymin=-self.LIM, ymax=self.LIM)

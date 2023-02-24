@@ -1,10 +1,12 @@
 
 import warnings
 
+import jax
 from qampy import signals, impairments, equalisation, phaserec, helpers
 from qampy.core.pythran_dsp import estimate_snr
 from qampy.signals import SignalQAMGrayCoded
 
+from typing import Tuple
 from .channel import Channel
 from gui_helpers import *
 from PyQt5.QtWidgets import QWidget
@@ -81,10 +83,12 @@ class ChalmersQAMpy(Channel):
             ("SNR Est (dB)", make_label(bind=self.data.bind("snr_est", '- / -'))),
         )
 
-    def propagate(self, const: jnp.ndarray, tx: jnp.ndarray):
-        pilot_seq_len = tx.shape[0] * 2  # eh should be fine
+    def propagate(self, const: jnp.ndarray, rng_key: int, seq_len: int) -> Tuple[jnp.ndarray, float]:
+        tx = self.get_tx(const, rng_key, seq_len)[1]
+
+        pilot_seq_len = 1024  # eh should be fine
         pilot_ins_rat = 33
-        payload_size = tx.shape[0]
+        payload_size = tx.shape[-1]
 
         # (frame_length - pilot_seq_len)/pilot_ins_rat
         N = int((payload_size * pilot_ins_rat / (pilot_ins_rat - 1)) + pilot_seq_len)
@@ -97,8 +101,8 @@ class ChalmersQAMpy(Channel):
         const = jnp.array([const[:, 0] + 1j * const[:, 1]])
         scale = jnp.sqrt(jnp.mean(const.real ** 2 + const.imag ** 2))
         const /= scale
+        tx /= scale
 
-        tx = jnp.array([tx[:, 0] + 1j * tx[:, 1], tx[:, 0] + 1j * tx[:, 1]]) / scale
         M = const.size
         payload = ArbritarySignal.from_symbol_array(tx, const, fb=self.data['fb'] * 1e9)
         sig = signals.SignalWithPilots(M, N, pilot_seq_len, pilot_ins_rat, nmodes=2, nframes=4, fb=self.data['fb'] * 1e9)
@@ -117,4 +121,4 @@ class ChalmersQAMpy(Channel):
                     jnp.sum(jnp.abs(rx - tx) ** 2, axis=-1)
         )
         self.data['snr_est'] = f'{snr[0]:.2f} / {snr[1]:.2f}'
-        return jnp.array([rx[0].real, rx[0].imag]).T, snr[0]
+        return jnp.array([rx[0].real, rx[0].imag]).T * scale, snr[0]

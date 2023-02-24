@@ -65,14 +65,20 @@ class Connector:
             self.set(name, default)
         return ConnectorValue(self, name)
 
-    def on(self, name, callback, now=True) -> Connector:
+    def on(self, name, callback, default=None, now=True) -> Connector:
         """ callback on value change, now to execute immediately once """
+        if name not in self.data and default is not None:
+            self.set(name, default)
         if name not in self.callbacks:
             self.callbacks[name] = set()
         self.callbacks[name].add(callback)
         if now:
             callback(self[name])
         return self
+
+    def remove_callbacks(self, name):
+        if name in self.callbacks:
+            del self.callbacks[name]
 
     def __getitem__(self, item):
         return self.get(item)
