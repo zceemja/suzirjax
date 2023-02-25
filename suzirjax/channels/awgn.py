@@ -15,15 +15,15 @@ class AWGNChannel(Channel):
         super().__init__(*args)
         self.key = jax.random.PRNGKey(time.time_ns())
         self.sigma = 0
-        self.data.bind('snr', 12).on(self._set_sigma)
+        self.data.bind('ase', 12).on(self._set_sigma)
 
     def _set_sigma(self, snr):
         self.sigma = 10 ** (-snr / 20)
 
     def make_gui(self) -> QWidget:
         return FLayout(
-            ("SNR (dB)", make_float_input(-50, 50, 0.1, bind=self.data.bind("snr"))),
-            ("SNR", make_label(formatting='{:.3f}dB', bind=self.data.bind("snr_msq", 0.))),
+            ("AES (dB)", make_float_input(-50, 50, 0.1, bind=self.data.bind("ase"))),
+            ("SNR", make_label(formatting='{:.3f}dB', bind=self.data.bind("snr", 0.))),
         )
 
     def propagate(self, const: jnp.ndarray, rng_key: int, seq_len: int) -> Tuple[jnp.ndarray, float]:
@@ -36,7 +36,7 @@ class AWGNChannel(Channel):
                     jnp.sum(jnp.abs(tx) ** 2, axis=-1) /
                     jnp.sum(jnp.abs(rx - tx) ** 2, axis=-1)
             ).mean()
-        self.data['snr_msq'] = snr
+        self.data['snr'] = snr
         return jnp.array([rx.real, rx.imag]).T, snr
 
 
@@ -55,7 +55,7 @@ class PCAWGNChannel(Channel):
         super().__init__(*args)
         self.key = jax.random.PRNGKey(time.time_ns())
         self.sigma = 0
-        self.data.bind('noise', 12).on(self._set_sigma)
+        self.data.bind('ase', 12).on(self._set_sigma)
         self.data.bind('linewidth', 50).on(self._set_std, False)
         self.data.bind('fs', 25).on(self._set_std)
 
@@ -67,10 +67,10 @@ class PCAWGNChannel(Channel):
 
     def make_gui(self) -> QWidget:
         return FLayout(
-            ("Noise Figure (dB)", make_float_input(-50, 50, 0.1, bind=self.data.bind("noise"))),
+            ("ASE (dB)", make_float_input(-50, 50, 0.1, bind=self.data.bind("ase"))),
             ("Sample Rate (GHz)", make_float_input(0.001, 500, 1, bind=self.data.bind("fs", 25))),
             ("Linewidth (kHz)", make_float_input(1e-3, 1e6, 10, bind=self.data.bind("linewidth", ))),
-            ("SNR", make_label(formatting='{:.3f}dB', bind=self.data.bind("snr_msq", 0.))),
+            ("SNR", make_label(formatting='{:.3f}dB', bind=self.data.bind("snr", 0.))),
         )
 
     def propagate(self, const: jnp.ndarray, rng_key: int, seq_len: int) -> Tuple[jnp.ndarray, float]:
@@ -84,5 +84,5 @@ class PCAWGNChannel(Channel):
                     jnp.sum(jnp.abs(tx) ** 2, axis=-1) /
                     jnp.sum(jnp.abs(rx - tx) ** 2, axis=-1)
             )
-        self.data['snr_msq'] = 10 * jnp.log10(snr)
-        return jnp.array([rx.real, rx.imag]).T, self.data['snr_msq']
+        self.data['snr'] = 10 * jnp.log10(snr)
+        return jnp.array([rx.real, rx.imag]).T, self.data['snr']

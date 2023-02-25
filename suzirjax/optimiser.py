@@ -35,9 +35,11 @@ class Optimiser:
         """
         Computes the generalized mutual information (GMI) using the max-log approximation.
         """
-        a = (abs(const)**2).mean() * self.D
-        const /= a
+        # a = (abs(const)**2).mean() * self.D
+        # const /= a
+        # const
         # rx /= a
+        const = jnp.clip(const, -1, 1)
 
         sigma = 10 ** (-snr / 20)
         # Compute the squared distance between the received and constellation points

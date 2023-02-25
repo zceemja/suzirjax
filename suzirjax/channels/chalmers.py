@@ -76,11 +76,11 @@ class ChalmersQAMpy(Channel):
         return FLayout(
             ("Sample Rate (GHz)", make_float_input(1, 300, 1, bind=self.data.bind("fb", 25))),
             ("Linewidth (kHz)", make_float_input(1, 1e6, 1, bind=self.data.bind("linewidth", 100))),
-            ("SNR (dB)", make_float_input(-10, 40, 1, bind=self.data.bind("snr", 15))),
+            ("AES (dB)", make_float_input(-10, 40, 1, bind=self.data.bind("ase", 15))),
             ("Sync taps", make_int_input(1, 300, 1, bind=self.data.bind("ntaps", 17))),
             ("Enable CPE", make_checkbox(bind=self.data.bind("cpe_en", True))),
             ("Frame Synced", make_label(bind=self.data.bind("synced", False))),
-            ("SNR Est (dB)", make_label(bind=self.data.bind("snr_est", '- / -'))),
+            ("SNR (dB)", make_label(bind=self.data.bind("snr", '- / -'))),
         )
 
     def propagate(self, const: jnp.ndarray, rng_key: int, seq_len: int) -> Tuple[jnp.ndarray, float]:
@@ -108,9 +108,11 @@ class ChalmersQAMpy(Channel):
         sig = signals.SignalWithPilots(M, N, pilot_seq_len, pilot_ins_rat, nmodes=2, nframes=4, fb=self.data['fb'] * 1e9)
         sig = sig.from_symbol_array(payload, N, pilot_seq_len, pilot_ins_rat, pilots=None, nframes=4, fb=self.data['fb'] * 1e9)
         sig = sig.resample(2 * sig.fb, beta=0.01, renormalise=True)
+
         sig = impairments.apply_phase_noise(sig, self.data['linewidth'] * 1e3)
-        sig = impairments.change_snr(sig, self.data['snr'])
+        sig = impairments.change_snr(sig, self.data['ase'])
         sig = impairments.rotate_field(sig, np.pi / 0.1)
+
         self.data['synced'] = sig.sync2frame()
         self.wx, s1 = equalisation.pilot_equaliser(sig, [1e-3, 1e-3], self.data['ntaps'], apply=True, wxinit=self.wx, adaptive_stepsize=True)
         s1, ph = phaserec.pilot_cpe(s1, nframes=1)
@@ -120,5 +122,5 @@ class ChalmersQAMpy(Channel):
                     jnp.sum(jnp.abs(tx) ** 2, axis=-1) /
                     jnp.sum(jnp.abs(rx - tx) ** 2, axis=-1)
         )
-        self.data['snr_est'] = f'{snr[0]:.2f} / {snr[1]:.2f}'
+        self.data['snr'] = f'{snr[0]:.2f} / {snr[1]:.2f}'
         return jnp.array([rx[0].real, rx[0].imag]).T * scale, snr[0]
