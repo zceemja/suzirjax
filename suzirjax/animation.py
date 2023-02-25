@@ -8,7 +8,6 @@ import matplotlib
 from matplotlib import pyplot as plt
 from matplotlib.animation import FuncAnimation
 from rich.progress import Progress
-from rich.prompt import Confirm
 from rich import print
 
 from channels import Channel, AWGNChannel, PCAWGNChannel
@@ -40,30 +39,17 @@ class Animator:
         self.seq_len = seq_len
         self.mod_points = const.shape[0]
         self.key = jax.random.PRNGKey(time.time_ns())
-        self.key, key2 = jax.random.split(self.key, 2)
         self.task = None
         self.progress = None
         self.results = {'snr': [], 'gmi': []}
-        channel.data['ase'] = 12
+
         channel.data['linewidth'] = 10000
         channel.data['fs'] = 1
-
         optimiser.data['learning_rate'] = -.8
         optimiser.data['allow_decrease'] = True
 
-        rx, snr = channel.propagate(self.const, key2, self.seq_len)
-        tx_seq, _ = self.channel.get_tx(self.const, key2, self.seq_len)
-        self.optimiser.update(jnp.array([self.const.real, self.const.imag]).T, rx, snr, tx_seq[0])
-        self.ax.set_title(f'SNR={snr:.3f}dB GMI={self.optimiser.data["gmi"]:.3f}')
-        self.results['snr'].append(snr)
-        self.results['gmi'].append(self.optimiser.data["gmi"])
-
-        self.im = self.ax.imshow(
-            self._make_hist(rx), vmin=0, vmax=255,
-            interpolation='gaussian', extent=[-self.LIM, self.LIM, -self.LIM, self.LIM],
-            origin='lower', cmap='sillekens'
-        )
-        self.const_plt, = self.ax.plot(self.const.real, self.const.imag, '.', c='magenta')
+        self.im = None
+        self.const_plt = None
 
     def _make_hist(self, rx):
         d, _, _ = jnp.histogram2d(rx[:, 0], rx[:, 1], bins=self.BINS, density=True,
@@ -72,17 +58,28 @@ class Animator:
         return d.T
 
     def _update(self, frame):
-        if 400 <= frame <= 430:
-            self.channel.data['ase'] -= 0.25
-        if 700 <= frame <= 730:
-            self.channel.data['ase'] += 0.25
+        # if 400 <= frame <= 430:
+        #     self.channel.data['ase'] -= 0.25
+        # if 700 <= frame <= 730:
+        #     self.channel.data['ase'] += 0.25
         self.key, key2 = jax.random.split(self.key, 2)
         rx, snr = self.channel.propagate(self.const, key2, self.seq_len)
         tx_seq, _ = self.channel.get_tx(self.const, key2, self.seq_len)
-        c = self.optimiser.update(jnp.array([self.const.real, self.const.imag]).T, rx, snr, tx_seq[0])
-        self.const = c[:, 0] + 1j * c[:, 1]
+
         self.results['snr'].append(snr)
         self.results['gmi'].append(self.optimiser.data["gmi"])
+
+        c = self.optimiser.update(jnp.array([self.const.real, self.const.imag]).T, rx, snr, tx_seq[0])
+        self.const = c[:, 0] + 1j * c[:, 1]
+
+        if self.im is None:
+            self.ax.set_title('-')
+            self.im = self.ax.imshow(
+                self._make_hist(rx), vmin=0, vmax=255,
+                interpolation='gaussian', extent=[-self.LIM, self.LIM, -self.LIM, self.LIM],
+                origin='lower', cmap='sillekens'
+            )
+            self.const_plt, = self.ax.plot(self.const.real, self.const.imag, '.', c='magenta')
 
         self.im.set_data(self._make_hist(rx))
         self.const_plt.set_data(self.const.real, self.const.imag)
@@ -92,24 +89,45 @@ class Animator:
         return self.const_plt, self.im
 
     def _init(self):
-        return self.const_plt, self.im
+        return self._update(-1)
+
+    def plot_snr_gmi(self):
+        snr = np.array(self.results['snr'])
+        gmi = np.array(self.results['gmi'])
+        x = np.arange(snr.size)
+
+        fig, ax1 = plt.subplots()
+        ax1.set_xlabel('Iterations')
+        ax1.set_ylabel('GMI (bit/2Dsym)')
+        ax1.plot(x, gmi, color='tab:blue')
+        ax1.tick_params(axis='y', labelcolor='tab:blue')
+
+        ax2 = ax1.twinx()
+        ax2.set_ylabel('SNR (dB)')
+        ax2.plot(x, snr, color='tab:orange')
+        ax2.tick_params(axis='y', labelcolor='tab:orange')
+        ax1.grid()
+
+        return plt
 
     def animate(self, dirname, frames=300):
-        dirname = os.path.expanduser(dirname)
-        fname = f"{self.data['mod_name']}_{self.channel.data['aes']}"
+        dirname = os.path.abspath(os.path.expanduser(dirname))
+        fname = f"{self.data['mod_name']}-SNR_{self.channel.data['ase']}dB"
         i = 0
-        while os.path.exists(os.path.join(dirname, f'{fname}_{i:02d}')):
+        while os.path.exists(os.path.join(dirname, f'{fname}-{i:02d}.mp4')):
             i += 1
-        full_fname = os.path.join(dirname, f'{fname}_{i:02d}')
-        print(f"Processing [red]{fname}_{i:02d}[/red]")
+        full_fname = os.path.join(dirname, f'{fname}-{i:02d}')
+        print(f"Processing [red]{fname}-{i:02d}[/red]")
 
         with Progress() as progress:
             self.progress = progress
             self.task = progress.add_task("Simulating", total=frames)
             anim = FuncAnimation(self.figure, self._update, init_func=self._init, frames=frames, interval=0, blit=True)
             anim.save(full_fname + '.mp4', fps=30)
+            progress.remove_task(self.task)
             print(f"Saving [red]{full_fname}.mp4[/red]")
         np.savez_compressed(full_fname + '.npz', snr=np.array(self.results['snr']), gmi=np.array(self.results['gmi']))
+        self.plot_snr_gmi().savefig(full_fname + '.png')
 
     def animate_now(self, frames):
         anim = FuncAnimation(self.figure, self._update, init_func=self._init, frames=frames, interval=20, repeat=True, blit=False)
@@ -131,6 +149,9 @@ if __name__ == '__main__':
     parser.add_argument('-r', '--resolution', type=int, default=480,
                         help='Graphic resolution in pixels')
     parser.add_argument('-f', '--frames', type=int, default=600, help='Frames to simulate')
+    parser.add_argument('-n', '--snr', type=float, default=12, help='Set target SNR')
+    parser.add_argument('-l', '--lr', type=float, default=1e-2, help='ADAM Learning Rate')
+
 
     args = parser.parse_args()
     print("Starting setup..")
@@ -139,7 +160,8 @@ if __name__ == '__main__':
     const = get_modulation(data['mod_name'])
     data['mod_points'] = const.shape[0]
     channel = AWGNChannel(None)
-    optimiser = AdamOpt(data, learning_rate=4e-3)
+    channel.data['ase'] = args.snr
+    optimiser = AdamOpt(data, learning_rate=args.lr)
     if args.window:
         # Load before frame instance
         matplotlib.use('Qt5Agg')
