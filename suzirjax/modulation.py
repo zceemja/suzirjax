@@ -15,24 +15,25 @@ def graycode(o):
 
 def relabel(x: jnp.ndarray):
     d = x.shape[0]
-    n = int(jnp.log2(x.shape[1] * 2 ** d))
+    n = int(jnp.log2(x.shape[1]))
 
-    def _maprecursive(_x, _m):
+    def _map_recursive(_x, _m):
         if _x.shape[0] == 1:
-            return jnp.zeros(_x.size).at[jnp.argsort(_x)].set(graycode(2 ** _m[0]))
+            return jnp.zeros(_x.size, dtype=int).at[jnp.argsort(_x)].set(graycode(2 ** _m[0]))
         else:
             _mmap = jnp.zeros(((2 ** _m.sum()).astype(int),), dtype=int)
             mmap_d = graycode(2 ** _m[0])
             argsort = jnp.lexsort(jnp.flipud(_x))
             for i in jnp.arange(2 ** _m[0]):
                 idx = argsort[(jnp.arange(2 ** _m[1:].sum()) + i * 2 ** _m[1:].sum()).astype(int)]
-                _mmap = _mmap.at[idx].set(2 ** _m[1:].sum() * mmap_d[i] + _maprecursive(_x[1:, idx], _m[1:]))
+                _mmap = _mmap.at[idx].set(2 ** _m[1:].sum() * mmap_d[i] + _map_recursive(_x[1:, idx], _m[1:]))
             return _mmap
 
     m = jnp.floor(n / d) * jnp.ones((d,))
     mlow = int(n - m.sum())
-    m = m.at[-mlow:].set(m[-mlow:] + 1).astype(int)
-    mmap = _maprecursive(x, m)
+    if mlow > 0:
+        m = m.at[-mlow:].set(m[-mlow:] + 1)
+    mmap = _map_recursive(x, m.astype(int))
     # if abs(jnp.linalg.det(jnp.eye(self.M)[mmap])) != 1:
     #     raise ValueError('Failed to relabel the constellation points.')
     return jnp.take(x, mmap, axis=-1)
@@ -108,8 +109,11 @@ def get_modulation(name: str, unit_power=True) -> np.ndarray:
         c = make_qam(points)
     elif name == 'RAND':
         c = np.random.uniform(-1., 1., points) + 1j * np.random.uniform(-1., 1., points)
+        c = relabel(np.stack([c.real, c.imag]))
+        c = c[0, :] + 1j * c[1, :]
     else:
         raise ValueError(f"Unknown modulation name '{name}'")
+    c += np.random.uniform(-1., 1., points) * 1e-9 + 1j * np.random.uniform(-1., 1., points) * 1e-9  # break symmetry
     if unit_power:
-        c = c / c.real.max()
+        c /= jnp.sqrt(jnp.mean(jnp.abs(c)**2))
     return c

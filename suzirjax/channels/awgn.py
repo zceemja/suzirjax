@@ -29,8 +29,8 @@ class AWGNChannel(Channel):
     def propagate(self, const: jnp.ndarray, rng_key: int, seq_len: int) -> Tuple[jnp.ndarray, float]:
         self.key, key = jax.random.split(self.key)
         tx = self.get_tx(const, rng_key, seq_len)[1][0]
-        # tx = jnp.array([tx.real, tx.imag])
-        noise = jax.random.normal(key, tx.shape, dtype=complex) * self.sigma
+
+        noise = jnp.sqrt(jnp.mean(jnp.abs(const) ** 2)) * jax.random.normal(key, tx.shape, dtype=complex) * self.sigma
         rx = tx + noise  # * (2 ** -.5)
         snr = 10 * jnp.log10(
                     jnp.sum(jnp.abs(tx) ** 2, axis=-1) /
@@ -76,7 +76,7 @@ class PCAWGNChannel(Channel):
     def propagate(self, const: jnp.ndarray, rng_key: int, seq_len: int) -> Tuple[jnp.ndarray, float]:
         self.key, key1, key2 = jax.random.split(self.key, num=3)
         tx = self.get_tx(const, rng_key, seq_len)[1][0]
-        noise = jax.random.normal(key1, shape=tx.shape, dtype=tx.dtype) * self.sigma * (2 ** -.5)
+        noise = jnp.sqrt(jnp.mean(jnp.abs(const) ** 2)) * jax.random.normal(key1, shape=tx.shape, dtype=tx.dtype) * self.sigma * (2 ** -.5)
         # phase = jnp.cumsum(, axis=-1)
         phase = jnp.exp(1j * jax.random.normal(key2, shape=tx.shape) * self.std)
         rx = tx * phase + noise

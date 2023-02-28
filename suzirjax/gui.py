@@ -160,7 +160,8 @@ class ApplicationWidget(QFrame):
 
 
 class ConstellationCanvas(FigureCanvasQTAgg):
-    LIM = 1 + 2 ** -.5  # Should match simulation.py HIST_LIM
+    # LIM = 1 + 2 ** -.5  # Should match simulation.py HIST_LIM
+    LIM = 2.49
     TEXT_OFFSET = 0.05
 
     def __init__(self, data: Connector):

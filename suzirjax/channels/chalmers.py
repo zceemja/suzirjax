@@ -2,7 +2,7 @@
 import warnings
 
 import jax
-from qampy import signals, impairments, equalisation, phaserec, helpers
+from qampy import signals, impairments, equalisation, phaserec, helpers, analog_frontend
 from qampy.core.pythran_dsp import estimate_snr
 from qampy.signals import SignalQAMGrayCoded
 
@@ -86,8 +86,8 @@ class ChalmersQAMpy(Channel):
     def propagate(self, const: jnp.ndarray, rng_key: int, seq_len: int) -> Tuple[jnp.ndarray, float]:
         tx = self.get_tx(const, rng_key, seq_len)[1]
 
-        pilot_seq_len = 1024  # eh should be fine
-        pilot_ins_rat = 33
+        pilot_seq_len = 2 ** 12
+        pilot_ins_rat = 5
         payload_size = tx.shape[-1]
 
         # (frame_length - pilot_seq_len)/pilot_ins_rat
@@ -97,25 +97,39 @@ class ChalmersQAMpy(Channel):
         # def calc_n(p, pr, ps, n=None):
         #     N = p * pr / (pr - 1) + ps
         #     return N, ((n or N) - ps) / pr
-
-        const = jnp.array([const[:, 0] + 1j * const[:, 1]])
-        scale = jnp.sqrt(jnp.mean(const.real ** 2 + const.imag ** 2))
+        scale = np.sqrt(2) if (abs(const)**2).mean() == 2 else 1
         const /= scale
         tx /= scale
 
         M = const.size
         payload = ArbritarySignal.from_symbol_array(tx, const, fb=self.data['fb'] * 1e9)
+        # payload = SignalQAMGrayCoded.from_symbol_array(tx, const.size, fb=self.data['fb'] * 1e9)
         sig = signals.SignalWithPilots(M, N, pilot_seq_len, pilot_ins_rat, nmodes=2, nframes=4, fb=self.data['fb'] * 1e9)
         sig = sig.from_symbol_array(payload, N, pilot_seq_len, pilot_ins_rat, pilots=None, nframes=4, fb=self.data['fb'] * 1e9)
         sig = sig.resample(2 * sig.fb, beta=0.01, renormalise=True)
 
-        sig = impairments.apply_phase_noise(sig, self.data['linewidth'] * 1e3)
-        sig = impairments.change_snr(sig, self.data['ase'])
-        sig = impairments.rotate_field(sig, np.pi / 0.1)
+        synced = False
+        failed = -1
+        while not synced:
+            if failed > 100:
+                return tx, 0
+            failed += 1
+            sig2 = impairments.apply_phase_noise(sig, self.data['linewidth'] * 1e3)
+            # sig2 = impairments.change_snr(sig2, self.data['ase'])
+            sig2 = impairments.rotate_field(sig2, np.pi / 0.1)
 
-        self.data['synced'] = sig.sync2frame()
-        self.wx, s1 = equalisation.pilot_equaliser(sig, [1e-3, 1e-3], self.data['ntaps'], apply=True, wxinit=self.wx, adaptive_stepsize=True)
-        s1, ph = phaserec.pilot_cpe(s1, nframes=1)
+            sig2 = analog_frontend.orthonormalize_signal(sig2)
+            sig2 = helpers.normalise_and_center(sig2)
+            synced = sig2.sync2frame()
+
+        if failed > 0:
+            print(f"Failed to sync {failed} times")
+        self.data['synced'] = synced
+        sig2 = helpers.normalise_and_center(sig2)
+        sig2 = analog_frontend.orthonormalize_signal(sig2)
+        self.wx, s1 = equalisation.pilot_equaliser(sig2, (50e-6, 40e-5), self.data['ntaps'], apply=True, wxinit=self.wx, adaptive_stepsize=True)
+        s1 = analog_frontend.orthonormalize_signal(s1)
+        s1, ph = phaserec.pilot_cpe(s1, nframes=4)
         # data = s1.get_data()
         rx = s1.get_data()
         snr = 10 * jnp.log10(
@@ -123,4 +137,7 @@ class ChalmersQAMpy(Channel):
                     jnp.sum(jnp.abs(rx - tx) ** 2, axis=-1)
         )
         self.data['snr'] = f'{snr[0]:.2f} / {snr[1]:.2f}'
-        return jnp.array([rx[0].real, rx[0].imag]).T * scale, snr[0]
+
+        rx1 = rx[0] * scale
+        res = jnp.array([rx1.real, rx1.imag]).T
+        return res, snr[0]

@@ -26,7 +26,8 @@ class SimulationSignal(QObject):
 
 
 class SimulationWorker(QThread):
-    HIST_LIM = 1 + 2 ** -.5
+    # HIST_LIM = 1 + 2 ** -.5
+    HIST_LIM = 2.49
     HIST_BINS = 128
 
     def __init__(self, data: Connector, const: jnp.ndarray, parent=None):

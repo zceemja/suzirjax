@@ -31,17 +31,28 @@ class Optimiser:
         self.bmap_idx_false = bitmap_indices(~self.bmap)
         self.data['gmi'] = -np.Inf
 
-    def gmi_max_log(self, const: jnp.ndarray, rx: jnp.ndarray, tx_bits: jnp.ndarray, snr: float) -> float:
+    def gmi_log_sum(self, const: jnp.ndarray, nx: jnp.ndarray, tx_seq: jnp.ndarray, snr: float) -> float:
         """
-        Computes the generalized mutual information (GMI) using the max-log approximation.
+        Computes the generalized mutual information (GMI) using the log sum approximation.
         """
-        # a = (abs(const)**2).mean() * self.D
-        # const /= a
-        # const
-        # rx /= a
-        const = jnp.clip(const, -1, 1)
-
         sigma = 10 ** (-snr / 20)
+
+        scaling = jnp.sqrt(jnp.mean(jnp.sum(const ** 2, axis=1) / (self.D / 2)))
+        # scaling = jnp.sqrt((jnp.sum(const**2, axis=1))) * self.D
+        const /= scaling
+
+        nx /= scaling
+
+        tx_bits = jnp.take(self.bmap, tx_seq, axis=0)
+        tx = jnp.take(const, tx_seq, axis=0)
+
+        rx = tx + nx
+
+
+        # const /= sigma
+        # rx /= sigma
+        # rx /= scaling
+
         # Compute the squared distance between the received and constellation points
         squared_distance = ((rx[:, None, :] - const[None, :, :]) ** 2).sum(axis=-1)
 
@@ -49,8 +60,9 @@ class Optimiser:
         symbol_log_likelihood = -squared_distance / sigma ** 2
 
         # Compute the log likelihood ratios for each sample
-        max_true = jnp.max(symbol_log_likelihood[:, self.bmap_idx_true], axis=1)
-        max_false = jnp.max(symbol_log_likelihood[:, self.bmap_idx_false], axis=1)
+        max_true = jnp.log(jnp.sum(jnp.exp(symbol_log_likelihood[:, self.bmap_idx_true]), axis=1))
+        max_false = jnp.log(jnp.sum(jnp.exp(symbol_log_likelihood[:, self.bmap_idx_false]), axis=1))
+        # max_false = jnp.max(symbol_log_likelihood[:, self.bmap_idx_false], axis=1)
         log_likelihood_ratios = max_true - max_false
 
         # Compute the information loss for each sample
@@ -69,22 +81,19 @@ class Optimiser:
     def _extra_gui_elements(self) -> List[Tuple[str, QWidget]]:
         return []
 
-    def optimise(self, const, rx, tx_bits, snr) -> Tuple[jnp.ndarray, float]:
-        hashed = hash(const.tobytes()) ^ hash(float(snr))
-        if self._prev is None or self._prev[0] != hashed:
-            gmi = jax.jit(self.gmi_max_log)(const, rx, tx_bits, snr)
-            self._prev = hashed, gmi
-            return const, gmi
-        return const, self._prev[1]
+    def optimise(self, const, rx, tx_seq, snr) -> Tuple[jnp.ndarray, float]:
+        nx = rx - jnp.take(const, tx_seq, axis=0)
+        gmi = jax.jit(self.gmi_log_sum)(const, nx, tx_seq, snr)
+        return const, gmi
 
     def update(self, const: jnp.ndarray, rx: jnp.ndarray, snr: float, tx_seq: jnp.ndarray = None) -> jnp.ndarray:
         if tx_seq is None:
-            # Assume just sending all same bits in repeat
-            tx_bits = jnp.tile(self.bmap, (rx.shape[0] // self.M, 1))
-        else:
-            tx_bits = jnp.take(self.bmap, tx_seq, axis=0)
+            tx_seq = jnp.tile(jnp.arange(self.M), (rx.shape[0] // self.M))
 
-        new_const, gmi = self.optimise(const, rx, tx_bits, snr)
+        new_const, gmi = self.optimise(const, rx, tx_seq, snr)
+        new_const /= jnp.sqrt(jnp.mean(jnp.abs(const)**2))
+        if jnp.isnan(gmi):
+            return const
         if not self.data['allow_decrease'] and gmi < self.data.get('gmi'):
             return const
         self.data['gmi'] = gmi
@@ -102,21 +111,28 @@ class GradientDescentOpt(Optimiser):
             ("Learning rate (10^n)", make_float_input(-6, 2, 0.1, bind=self.data.bind("learning_rate", -1.))),
         ]
 
-    def optimise(self, const, rx, tx_bits, snr) -> Tuple[jnp.ndarray, float]:
-        dtype = jnp.float16
-        gmi, gmi_grad = jax.value_and_grad(self.gmi_max_log)(
-            const.astype(dtype),
-            rx.astype(dtype),
-            tx_bits,
-            snr.astype(dtype)
-        )
-        gmi = gmi.astype(jnp.float32)
-        gmi_grad = gmi_grad.astype(jnp.float32)
+    def optimise(self, const, rx, tx_seq, snr) -> Tuple[jnp.ndarray, float]:
+        # dtype = jnp.float16
+        # gmi, gmi_grad = jax.value_and_grad(self.gmi_max_log)(
+        #     const.astype(dtype),
+        #     rx.astype(dtype),
+        #     tx_bits,
+        #     snr.astype(dtype)
+        # )
+        # gmi = gmi.astype(jnp.float32)
+        # gmi_grad = gmi_grad.astype(jnp.float32)
+        # self.data['gmi_f32'] = jax.jit(self.gmi_max_log)(const, rx, tx_bits, snr)
+        # self.data['gmi_delta'] = abs(self.data['gmi_f32'] - gmi)
 
-        self.data['gmi_f32'] = jax.jit(self.gmi_max_log)(const, rx, tx_bits, snr)
-        self.data['gmi_delta'] = abs(self.data['gmi_f32'] - gmi)
+        nx = rx - jnp.take(const, tx_seq, axis=0)
+        gmi, gmi_grad = jax.value_and_grad(self.gmi_log_sum)(const, nx, tx_seq, snr)
+        if jnp.any(jnp.isnan(gmi_grad)):
+            return const, gmi
+
+        const += 10 ** self.data['learning_rate'] * gmi_grad
+        # const /= jnp.sqrt(jnp.mean(jnp.sum(const ** 2, axis=1)))
         self.data['grad_gmi'] = jnp.sqrt((gmi_grad ** 2).sum())
-        return const + (10 ** self.data['learning_rate'] * gmi_grad), gmi
+        return const, gmi
 
 
 class AdamOpt(Optimiser):
@@ -136,22 +152,42 @@ class AdamOpt(Optimiser):
             ("||grad GMI||", make_label(formatting='{:.3f}', bind=self.data.bind("grad_gmi", 0.)))
         ]
 
-    def optimise(self, const, rx, tx_bits, snr) -> Tuple[jnp.ndarray, float]:
+    def optimise(self, const, rx, tx_seq, snr) -> Tuple[jnp.ndarray, float]:
         if self.opt_state is None:
             self.opt_state = self.optimiser.init(const)
-        gmi, gmi_grad = jax.value_and_grad(self.gmi_max_log)(const, rx, tx_bits, snr)
+
+        # const, self.opt_state = jax.jit(self._opt_update)(const, self.opt_state, rx, tx_bits, snr)
+        # gmi = self.gmi_max_log(const, rx, tx_bits, snr)
+
+        # scaling = np.sqrt(jnp.mean(jnp.sum(const ** 2, axis=1) / (self.D / 2)))
+        nx = rx - jnp.take(const, tx_seq, axis=0)  # TODO: move
+
+        gmi, gmi_grad = jax.value_and_grad(self.gmi_log_sum)(const, nx, tx_seq, snr)
+        if jnp.any(jnp.isnan(gmi_grad)):
+            return const, gmi
+        # gmi_grad /= scaling
+
         updates, self.opt_state = self.optimiser.update(-gmi_grad, self.opt_state, const)
         const = optax.apply_updates(const, updates)
-        self.data['grad_gmi'] = jnp.sqrt((gmi_grad ** 2).sum())
+
+        self.data['grad_gmi'] = np.sqrt((gmi_grad ** 2).sum())
         return const, gmi
 
 
-# class SM3Opt(AdamOpt):
-#     NAME = 'SM3'
-#
-#     def __init__(self, data: Connector):
-#         super().__init__(data)
-#         self.optimiser = optax.sm3(0.01)
+class RMSPropOpt(AdamOpt):
+    NAME = 'RMSProp'
+
+    def __init__(self, data: Connector, learning_rate=0.01):
+        super().__init__(data)
+        self.optimiser = optax.rmsprop(learning_rate)
+
+
+class YogiOpt(AdamOpt):
+    NAME = 'Yogi'
+
+    def __init__(self, data: Connector, learning_rate=0.01):
+        super().__init__(data)
+        self.optimiser = optax.yogi(learning_rate)
 
 
 # class AdaFactorOpt(AdamOpt):
@@ -162,15 +198,4 @@ class AdamOpt(Optimiser):
 #         self.optimiser = optax.adafactor()
 
 
-# class BFGSOpt(Optimiser):
-#     NAME = 'BFGS'
-#
-#     def optimise(self, const, rx, tx_bits, snr) -> Tuple[jnp.ndarray, float]:
-#         res = optimize.minimize(
-#             lambda x, *args: -self.gmi_max_log(x.reshape((-1, 2)), *args), const.flatten(),
-#             args=(rx, tx_bits, snr), method='BFGS')
-#         const = res.x.reshape((-1, 2))
-#         return const, -res.fun
-
-
-OPTIMISERS = [Optimiser, GradientDescentOpt, AdamOpt]
+OPTIMISERS = [Optimiser, GradientDescentOpt, AdamOpt, RMSPropOpt, YogiOpt]
