@@ -97,7 +97,7 @@ class ChalmersQAMpy(Channel):
         # def calc_n(p, pr, ps, n=None):
         #     N = p * pr / (pr - 1) + ps
         #     return N, ((n or N) - ps) / pr
-        scale = np.sqrt(2) if (abs(const)**2).mean() == 2 else 1
+        scale = np.sqrt((abs(const)**2).mean())
         const /= scale
         tx /= scale
 
@@ -115,7 +115,7 @@ class ChalmersQAMpy(Channel):
                 return tx, 0
             failed += 1
             sig2 = impairments.apply_phase_noise(sig, self.data['linewidth'] * 1e3)
-            # sig2 = impairments.change_snr(sig2, self.data['ase'])
+            sig2 = impairments.change_snr(sig2, self.data['ase'])
             sig2 = impairments.rotate_field(sig2, np.pi / 0.1)
 
             sig2 = analog_frontend.orthonormalize_signal(sig2)
@@ -127,9 +127,12 @@ class ChalmersQAMpy(Channel):
         self.data['synced'] = synced
         sig2 = helpers.normalise_and_center(sig2)
         sig2 = analog_frontend.orthonormalize_signal(sig2)
-        self.wx, s1 = equalisation.pilot_equaliser(sig2, (50e-6, 40e-5), self.data['ntaps'], apply=True, wxinit=self.wx, adaptive_stepsize=True)
+        self.wx, s1 = equalisation.pilot_equaliser(
+            sig2, (50e-6, 40e-5), self.data['ntaps'], apply=True, wxinit=self.wx, methods=("mcma", "mddma"),
+            adaptive_stepsize=True, foe_comp=False
+        )
         s1 = analog_frontend.orthonormalize_signal(s1)
-        s1, ph = phaserec.pilot_cpe(s1, nframes=4)
+        s1, ph = phaserec.pilot_cpe(s1, nframes=1)
         # data = s1.get_data()
         rx = s1.get_data()
         snr = 10 * jnp.log10(

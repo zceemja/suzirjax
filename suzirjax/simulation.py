@@ -1,11 +1,11 @@
-import queue
+import threading
 import time
 
 import jax
-from PyQt5.QtCore import QThread, QObject, pyqtSignal, QTimer
+from PyQt5.QtCore import QThread, QObject, pyqtSignal, QTimer, QWaitCondition
+from PyQt5.QtWidgets import QWidget
 from jax import numpy as jnp
 import numpy as np
-from queue import Queue
 
 from gui_helpers import Connector
 
@@ -25,99 +25,74 @@ class SimulationSignal(QObject):
     complete = pyqtSignal()
 
 
-class SimulationWorker(QThread):
-    # HIST_LIM = 1 + 2 ** -.5
+class Simulation(QWidget):
     HIST_LIM = 2.49
     HIST_BINS = 128
 
     def __init__(self, data: Connector, const: jnp.ndarray, parent=None):
-        super().__init__()
-
+        super().__init__(parent)
         self.signal = SimulationSignal()
-        self.data = data
+        self._running = True
         self._const = const
-        self.const_new = False
-        self.fps = 20
-        self._request_queue = Queue(maxsize=1)
-        self.paused = True
-        self.timing = 1.5  # approx time for single simulation in ms
+        self.data = data
+        self.rng_key = 312
+        self._paused = threading.Event()
+        if not self.data['sim_running']:
+            self._paused.clear()
+        self._thread = threading.Thread(name='simulation_loop', target=self._loop)
+        self._single = False
 
-        self.progress_complete = 0
-        self.progress_timer = QTimer()
-        self.progress_timer.timeout.connect(self._update_progress)
-
-    def _update_progress(self):
-        self.progress_complete = min(self.progress_complete + 1, 100)
-        self.signal.update.emit(self.progress_complete)
+    def start(self):
+        self._thread.start()
 
     def set_const(self, const):
         self._const = const
-        self.const_new = True
-        self.single()
 
     def pause(self):
-        self.paused = True
+        self._paused.clear()
+        self.data['sim_running'] = False
 
     def resume(self):
-        self.paused = False
-        self.single()
+        self._paused.set()
+        self.data['sim_running'] = True
+
+    def toggle_pause(self):
+        self.pause() if self._paused.isSet() else self.resume()
 
     def single(self):
-        try:
-            self._request_queue.put(True, block=False)
-        except queue.Full:
-            pass
+        self._single = True
+        self._paused.set()
+        self.data['sim_running'] = False
+
+    def wait(self, timeout=None):
+        self._thread.join(timeout)
+
+    def close(self):
+        self._running = False
+        self._paused.set()
 
     def _make_hist(self, rx):
         d, _, _ = jnp.histogram2d(
             rx[:, 0], rx[:, 1], bins=self.HIST_BINS, range=np.array([
                 [-self.HIST_LIM, self.HIST_LIM], [-self.HIST_LIM, self.HIST_LIM]
             ]))
-        # d[d < 1] = np.nan
-        # d /= jnp.log2(rx.shape[0]) * self.data['mod_points']
         return d.T
 
-    def simulate(self):
-        self.data.copy()
+    def _simulate(self):
+        data = self.data.data.copy()
         const = self._const.copy()
 
-        # seq = (1 << (self.data['seq_length'])) // self.data['mod_points']  # Do random instead?
-        # tx = jnp.tile(const, (seq, 1))
-        rng_key = 312
-        rx, snr = self.data['channel'].propagate(const, rng_key, 1 << self.data['seq_length'])
-        const = jax.device_put(self.data['optimiser'].update(const, rx, snr))
-
-        # Something is going terribly wrong
-        if jnp.any(jnp.isnan(const)):
-            const = self._const.copy()
+        rx, snr = data['channel'].propagate(const, self.rng_key, 1 << data['seq_length'])
+        const = jax.device_put(data['optimiser'].update(const, rx, snr))
 
         hist = self._make_hist(rx)
         self.signal.result.emit(const, hist)
 
-        # Just in case of out if sync
-        if not self.const_new:
-            self._const = const
-        self.const_new = False
-
-    def run(self):
-        while True:
-            if not self._request_queue.get():
-                break
-            self.progress_complete = 0
-            self.signal.start.emit(self.timing)
-            t = time.time_ns()
-            self.simulate()
-            t = (time.time_ns() - t) / 1e9
-            self.timing = t
-            self.signal.complete.emit()
-            interval = max(int((1 / self.fps - t) * 1e3), 5)
-            if not self.paused:
-                QThread.msleep(interval)
-                try:
-                    self.single()
-                except ValueError:
-                    break  # Was done after sleep
-
-    def close(self):
-        self._request_queue.put(False)
-        self._request_queue.task_done()
+    def _loop(self):
+        self._paused.wait()
+        while self._running:
+            self._simulate()
+            if self._single:
+                self._single = False
+                self._paused.clear()
+            self._paused.wait()

@@ -97,13 +97,19 @@ class RemoteChannel(Channel):
         return FLayout(
             ('', self.btn_connect),
             ("Ping", make_label(bind=self.data.bind("ping", '-'))),
-            ("SNR Est (dB)", make_label(bind=self.data.bind("snr_est", '- / -'))),
-            ("SNR (dB)", make_float_input(-10, 300, 1, bind=self.data.bind("snr", 30))),
-            ("Linewidth (kHz)", make_float_input(1, 1e5, 10, bind=self.data.bind("linewidth", 100))),
+            ("Sampling Rate (GHz)", make_int_input(1, 60, 1, bind=self.data.bind("fs", 15))),
+            ("Symbol Rate",  QLabel("90GHz")),
+            ("Power (dBm)", make_float_input(-50, 20, 1, bind=self.data.bind("power", 0))),
+            ("Additive Noise (dB)", make_float_input(-10, 300, 1, bind=self.data.bind("snr", 30))),
+            # ("Additive Phase Noise (kHz)", make_float_input(1, 1e5, 10, bind=self.data.bind("linewidth", 100))),
+            ("Route", make_combo(
+                "B2B", "45km ULL", "NDFF CONNET", "NDFF Telehouse", "NDFF Powerhouse", "NDFF Reading",
+                bind=self.data.bind("route", "B2B"))
+             ),
         )
 
     def propagate(self, const: jnp.ndarray, rng_key: int, seq_len: int) -> Tuple[jnp.ndarray, float]:
-
+        tx = self.get_tx(const, rng_key, seq_len)[1]
         if not self.sio.connected:
             return tx[0], 0
         self.sio.emit('tx', data=(array_to_bytes(const), rng_key, seq_len))

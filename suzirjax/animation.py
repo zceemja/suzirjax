@@ -80,10 +80,10 @@ class Animator:
         rx, snr = self.channel.propagate(self.const, key2, self.seq_len)
         tx_seq, _ = self.channel.get_tx(self.const, key2, self.seq_len)
 
-        if frame > 0:
-            print(f'X={self.const.shape} RX={rx.shape} TX={tx_seq[0].shape} SNR={snr}')
-            c = self.optimiser.update(jnp.array([self.const.real, self.const.imag]).T, rx, snr, tx_seq[0])
+        if frame > 0 and snr > 0:
+            c = self.optimiser.update(jnp.array([self.const.real, self.const.imag]).T, rx, channel.data['ase'], tx_seq[0])
             self.const = c[:, 0] + 1j * c[:, 1]
+            print(f"SNR={snr:.3f} GMI={self.optimiser.data['gmi']:.3f}")
 
         """ ANIMATION """
         self.results['snr'].append(snr)
@@ -93,10 +93,14 @@ class Animator:
         snr = np.array(self.results['snr'])
         snr = snr[np.isfinite(snr)]
 
+        _const = np.array([self.const.real, self.const.imag])
+        scale = np.sqrt((abs(_const) ** 2).mean())
+        _const /= scale
+
         if self.im is None:
             self.ax.set_title('-', color='white')
             self.im = self.ax.imshow(
-                self._make_hist(rx), vmin=0, vmax=255,
+                self._make_hist(rx / scale), vmin=0, vmax=255,
                 interpolation='gaussian', extent=[-self.LIM, self.LIM, -self.LIM, self.LIM],
                 origin='lower', cmap='sillekens'
             )
@@ -105,20 +109,20 @@ class Animator:
                 self.im3, = self.ax2.plot(np.arange(len(snr)), snr, c='tab:orange', lw=1.6)
             self.ax2.set_xlabel('Iterations', color='white')
             self.ax2.set_ylabel('GMI (bit/2D symbol)', color='white')
-            self.const_plt, = self.ax.plot(self.const.real, self.const.imag, '.', c='magenta')
+            self.const_plt, = self.ax.plot(_const[0], _const[1], '.', c='magenta')
             if self.text is not None:
                 self.ax.text(0, 0.1, self.text, color='white', horizontalalignment='left',
                              verticalalignment='top', transform=self.ax.transAxes)
             self.figure.tight_layout()
 
-        self.im.set_data(self._make_hist(rx))
+        self.im.set_data(self._make_hist(rx / scale))
         if len(gmi) > 0:
             self.im2.set_data(np.arange(len(gmi)), gmi)
             self.ax2.set_ylim([np.round(np.min(gmi) - 0.1, 1), np.round(np.max(gmi) + 0.1, 1)])
         if len(snr) > 0 and self.plot_snr:
             self.im3.set_data(np.arange(len(snr)), snr)
 
-        self.const_plt.set_data(self.const.real, self.const.imag)
+        self.const_plt.set_data(_const[0], _const[1])
         self.ax.title.set_text(f'GMI={self.optimiser.data["gmi"]:0.3f} bit/2D symbol')  # SNR={snr:.3f}dB
         if self.task is not None:
             self.progress.update(self.task, advance=1)
@@ -211,7 +215,7 @@ if __name__ == '__main__':
     elif args.channel == 'qampy':
         channel = ChalmersQAMpy(None)
         channel.data['ase'] = args.snr
-        channel.data['linewidth'] = 10  # kHz
+        channel.data['linewidth'] = 100  # kHz
         channel.data['fb'] = 15  # GHz
         channel.data['ntaps'] = 31
     else:
@@ -239,9 +243,10 @@ if __name__ == '__main__':
     anim = Animator(data, const, channel, optimiser, seq_len=2 ** args.seq_size, width=args.resolution)
     anim.text = (
         f"Constellation points: {data['mod_points']}\n"
-        f"Simulation points: 2^{args.seq_size}\n"
-        f"Channel model: {channel.NAME}\n"
-        f"Channel SNR: {channel.data['ase']}dB\n"
+        # f"Channel model: {channel.NAME}\n"
+        f"Channel model: Remote\n"
+        f"Payload shape: (2, {2**args.seq_size})\n"
+        # f"Channel SNR: {channel.data['ase']}dB\n"
         f"Optimiser: {optimiser.NAME}\n"
         f"Optimiser learning rate: {args.lr}\n"
         f"UCL ONG Suzirjax (github.com/zceemja/suzirjax)"
