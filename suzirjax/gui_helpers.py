@@ -1,12 +1,11 @@
-from __future__ import annotations
-
-import sys
+import copy
 
 import matplotlib
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 from typing import List, Tuple, TypeVar, Union, Any, Dict
+from inspect import signature
 
 __all__ = []
 
@@ -45,13 +44,28 @@ class Connector:
         self.data = {}
         self.callbacks = {}
 
-    def set(self, name, value) -> Connector:
+    def _call_cb(self, callback_params, current_val, previous_val):
+        callback, call_on_none = callback_params
+        sig = signature(callback)
+        if len(sig.parameters) == 0:
+            callback()
+        elif len(sig.parameters) == 1:
+            if call_on_none or current_val is not None:
+                callback(current_val)
+        elif len(sig.parameters) == 2:
+            if call_on_none or not (previous_val is None or current_val is None):
+                callback(current_val, previous_val)
+        else:
+            raise ValueError(f"Callback {callback} needs more than two arguments")
+
+    def set(self, name, value) -> 'Connector':
         if self.data.get(name) == value:
             return self
+        previous = self.data.get(name)
         self.data[name] = value
         if name in self.callbacks:
             for callback in self.callbacks[name]:
-                callback(value)
+                self._call_cb(callback, value, previous)
         return self
 
     def get(self, name, default=None):
@@ -65,15 +79,15 @@ class Connector:
             self.set(name, default)
         return ConnectorValue(self, name)
 
-    def on(self, name, callback, default=None, now=True) -> Connector:
+    def on(self, name, callback, default=None, now=True, call_on_none=True) -> 'Connector':
         """ callback on value change, now to execute immediately once """
         if name not in self.data and default is not None:
             self.set(name, default)
         if name not in self.callbacks:
             self.callbacks[name] = set()
-        self.callbacks[name].add(callback)
+        self.callbacks[name].add((callback, call_on_none))
         if now:
-            callback(self[name])
+            self._call_cb((callback, call_on_none), self.data.get(name), None)
         return self
 
     def remove_callbacks(self, name):
@@ -234,14 +248,19 @@ def make_hidden_group(*widgets: QWidget, bind: ConnectorValue, bind_value=True) 
 def make_radio_buttons(*options: Tuple[str, Any], parent=None, bind: ConnectorValue) -> QWidget:
     """ Make a group of radio buttons, options are tuples of string and value """
     main = QWidget(parent)
+    layout = QVBoxLayout()
+    main.setLayout(layout)
 
     val_map = {}
-    for name, value in options:
+
+    def __reg(name, val):
+        nonlocal val_map
         wget = QRadioButton(main)
         wget.setText(name)
-        wget.toggled.connect(lambda _: bind.set(value))
-
-        val_map[value] = wget
+        wget.toggled.connect(lambda _: bind.set(val))
+        layout.addWidget(wget)
+        val_map[val] = wget
+    [__reg(n, v) for n, v in options]
 
     def _toggle(val):
         if val in val_map:

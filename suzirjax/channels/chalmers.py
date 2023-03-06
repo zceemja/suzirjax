@@ -2,13 +2,13 @@
 import warnings
 
 import jax
+from suzirjax.gui_helpers import *
+
 from qampy import signals, impairments, equalisation, phaserec, helpers, analog_frontend
-from qampy.core.pythran_dsp import estimate_snr
 from qampy.signals import SignalQAMGrayCoded
 
 from typing import Tuple
 from .channel import Channel
-from gui_helpers import *
 from PyQt5.QtWidgets import QWidget
 from jax import numpy as jnp
 import numpy as np
@@ -44,12 +44,6 @@ class ArbritarySignal(SignalQAMGrayCoded):
             warnings.warn("Power of symbols is not normalized to 1, this might cause issues later")
         M = coded_symbols.size
         m = int(np.log2(M))
-        # scale = np.sqrt(theory.cal_scaling_factor_qam(M)) / np.sqrt((abs(np.unique(symbs)) ** 2).mean())
-        # coded_symbols, graycode, encoding, bitmap_mtx = cls._generate_mapping(M, scale, dtype=dtype)
-        # out = np.empty_like(symbs).astype(dtype)
-        # for i in range(symbs.shape[0]):
-        #     out[i], _, idx = make_decision(np.copy(symbs[i]), coded_symbols) # need a copy to avoid a pythran error
-        # bits = cls._demodulate(idx, encoding)
         encoding = (jnp.arange(M)[:, None] >> jnp.arange(m-1, -1, -1) & 1).astype(bool)
         obj = np.asarray(symbs).view(cls)
         obj._M = M

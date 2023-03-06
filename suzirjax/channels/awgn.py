@@ -1,5 +1,5 @@
 from .channel import Channel
-from gui_helpers import *
+from suzirjax.gui_helpers import *
 from PyQt5.QtWidgets import QWidget
 
 import jax
@@ -22,7 +22,7 @@ class AWGNChannel(Channel):
 
     def make_gui(self) -> QWidget:
         return FLayout(
-            ("AES (dB)", make_float_input(-50, 50, 0.1, bind=self.data.bind("ase"))),
+            ("Target SNR (dB)", make_float_input(-50, 50, 0.1, bind=self.data.bind("ase"))),
             ("SNR", make_label(formatting='{:.3f}dB', bind=self.data.bind("snr", 0.))),
         )
 
@@ -67,7 +67,7 @@ class PCAWGNChannel(Channel):
 
     def make_gui(self) -> QWidget:
         return FLayout(
-            ("ASE (dB)", make_float_input(-50, 50, 0.1, bind=self.data.bind("ase"))),
+            ("Target SNR (dB)", make_float_input(-50, 50, 0.1, bind=self.data.bind("ase"))),
             ("Sample Rate (GHz)", make_float_input(0.001, 500, 1, bind=self.data.bind("fs", 25))),
             ("Linewidth (kHz)", make_float_input(1e-3, 1e6, 10, bind=self.data.bind("linewidth", ))),
             ("SNR", make_label(formatting='{:.3f}dB', bind=self.data.bind("snr", 0.))),

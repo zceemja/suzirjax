@@ -1,13 +1,12 @@
 import threading
-import time
 
 import jax
-from PyQt5.QtCore import QThread, QObject, pyqtSignal, QTimer, QWaitCondition
+from PyQt5.QtCore import QObject, pyqtSignal
 from PyQt5.QtWidgets import QWidget
 from jax import numpy as jnp
 import numpy as np
 
-from gui_helpers import Connector
+from suzirjax.gui_helpers import Connector
 
 
 def norm(x: jnp.ndarray) -> jnp.ndarray:
@@ -26,7 +25,7 @@ class SimulationSignal(QObject):
 
 
 class Simulation(QWidget):
-    HIST_LIM = 2.49
+    HIST_LIM = 1.69
     HIST_BINS = 128
 
     def __init__(self, data: Connector, const: jnp.ndarray, parent=None):
@@ -83,8 +82,12 @@ class Simulation(QWidget):
         const = self._const.copy()
 
         rx, snr = data['channel'].propagate(const, self.rng_key, 1 << data['seq_length'])
-        const = jax.device_put(data['optimiser'].update(const, rx, snr))
+        tx, _ = data['channel'].get_tx(const, self.rng_key, 1 << data['seq_length'])
+        const = jax.device_put(data['optimiser'].update(const, rx, snr, tx[0]))
+        self._const = const.copy()
 
+        const /= np.sqrt((abs(const)**2).mean() * 2)
+        rx /= np.sqrt((abs(rx) ** 2).mean() * 2)
         hist = self._make_hist(rx)
         self.signal.result.emit(const, hist)
 
@@ -96,3 +99,4 @@ class Simulation(QWidget):
                 self._single = False
                 self._paused.clear()
             self._paused.wait()
+        print("Closing simulation loop")

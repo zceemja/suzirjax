@@ -1,7 +1,7 @@
 import numpy as np
 import re
 from jax import numpy as jnp
-import utils
+from suzirjax import utils
 
 __MOD = {}
 

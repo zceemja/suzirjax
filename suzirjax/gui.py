@@ -1,23 +1,21 @@
-import math
 import sys
-import time
+
+import jax
+
+from suzirjax.gui_gmi import GMIHistoryWindow
+from suzirjax.gui_helpers import *
+from suzirjax.channels import CHANNELS
+from suzirjax.modulation import MODULATIONS, get_modulation
+from suzirjax.optimiser import OPTIMISERS
+from suzirjax.simulation import Simulation
+from suzirjax.utils import register_cmaps
 
 from PyQt5.QtCore import QTimer
-from matplotlib.animation import FuncAnimation
-
-import simulation
-from gui_helpers import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
-from matplotlib import pyplot as plt
 import matplotlib
 import numpy as np
-from channels import CHANNELS
-from modulation import MODULATIONS, get_modulation
-from optimiser import OPTIMISERS
-from simulation import SimulationWorker
-from utils import register_cmaps
 
 matplotlib.use('Qt5Agg')
 register_cmaps()
@@ -45,7 +43,7 @@ class ApplicationWidget(QFrame):
 
         ## Simulation
         init_const = np.random.rand(32, 2) * 2 - 1
-        self.sim = simulation.Simulation(self.data, init_const, parent=self)
+        self.sim = Simulation(self.data, init_const, parent=self)
         self.progress = QProgressBar(self)
         self.progress_timer = QTimer()
 
@@ -55,6 +53,8 @@ class ApplicationWidget(QFrame):
         self.progress_timer.timeout.connect(self._progress_update)
         self.sim_btn = make_button("", lambda _: self.sim.toggle_pause(), self)
         self.data.on('sim_running', lambda r: self.sim_btn.setText('Stop' if r else 'Start'))
+        self.data.on('channel', lambda _, c: c.terminate(), now=False, call_on_none=False)
+        self.gmi_hist = GMIHistoryWindow(self.data, self)
 
         self.control_widget = VLayout(
             FLayout(
@@ -66,6 +66,7 @@ class ApplicationWidget(QFrame):
                 ("Show received", make_checkbox(bind=self.data.bind("show_rx", True))),
                 ("Show constellation", make_checkbox(bind=self.data.bind("show_c", True))),
                 ("Show bitmap", make_checkbox(bind=self.data.bind("show_bmap", True))),
+                ("GMI History", make_button('Show', lambda _: self.gmi_hist.show())),
             ),
             *[
                 make_hidden_group(channel.make_gui(), bind=self.data.bind("channel"), bind_value=channel)[0]
@@ -116,8 +117,10 @@ class ApplicationWidget(QFrame):
 
     def before_quit(self):
         self.quitting = True
+        self.data['channel'].terminate()
         self.sim.close()
         self.sim.wait()
+        print("Shutting down")
 
     def new_constellation(self, _):
         dlgc = Connector()
@@ -145,7 +148,7 @@ class ApplicationWidget(QFrame):
 
 class ConstellationCanvas(FigureCanvasQTAgg):
     # LIM = 1 + 2 ** -.5  # Should match simulation.py HIST_LIM
-    LIM = simulation.SimulationWorker.HIST_LIM
+    LIM = Simulation.HIST_LIM
     TEXT_OFFSET = 0.05
 
     def __init__(self, data: Connector):
@@ -234,6 +237,7 @@ if __name__ == '__main__':
             super().__init__()
             self.setWindowTitle('Suzirjax')
             self.setCentralWidget(ApplicationWidget(self))
+            self.setWindowTitle("Device: " + jax.devices()[0].device_kind)
 
             centre_point = QDesktopWidget().availableGeometry().center()
             geom = self.frameGeometry()

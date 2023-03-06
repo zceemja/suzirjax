@@ -1,9 +1,9 @@
 from typing import Tuple
-
 import jax
-from PyQt5.QtWidgets import QWidget
 from jax import numpy as jnp
-from gui_helpers import Connector
+
+from suzirjax.gui_helpers import Connector
+from PyQt5.QtWidgets import QWidget
 
 
 class Channel:
@@ -14,6 +14,9 @@ class Channel:
         self.data = Connector()
 
     def initialise(self):
+        pass
+
+    def terminate(self):
         pass
 
     def make_gui(self) -> QWidget:

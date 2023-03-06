@@ -2,7 +2,7 @@ import jax
 import numpy as np
 from jax import numpy as jnp
 import optax
-from gui_helpers import *
+from suzirjax.gui_helpers import *
 from PyQt5.QtWidgets import QWidget
 from typing import List, Tuple
 
@@ -31,7 +31,7 @@ class Optimiser:
         self.bmap_idx_false = bitmap_indices(~self.bmap)
         self.data['gmi'] = -np.Inf
 
-    def gmi_log_sum(self, const: jnp.ndarray, nx: jnp.ndarray, tx_seq: jnp.ndarray, snr: float) -> float:
+    def gmi_log_sum(self, const: jnp.ndarray, nx: jnp.ndarray, tx_seq: jnp.ndarray, snr: float) -> jnp.ndarray:
         """
         Computes the generalized mutual information (GMI) using the log sum approximation.
         """
@@ -40,18 +40,12 @@ class Optimiser:
         scaling = jnp.sqrt(jnp.mean(jnp.sum(const ** 2, axis=1) / (self.D / 2)))
         # scaling = jnp.sqrt((jnp.sum(const**2, axis=1))) * self.D
         const /= scaling
-
         nx /= scaling
 
         tx_bits = jnp.take(self.bmap, tx_seq, axis=0)
         tx = jnp.take(const, tx_seq, axis=0)
 
         rx = tx + nx
-
-
-        # const /= sigma
-        # rx /= sigma
-        # rx /= scaling
 
         # Compute the squared distance between the received and constellation points
         squared_distance = ((rx[:, None, :] - const[None, :, :]) ** 2).sum(axis=-1)
@@ -62,7 +56,6 @@ class Optimiser:
         # Compute the log likelihood ratios for each sample
         max_true = jnp.log(jnp.sum(jnp.exp(symbol_log_likelihood[:, self.bmap_idx_true]), axis=1))
         max_false = jnp.log(jnp.sum(jnp.exp(symbol_log_likelihood[:, self.bmap_idx_false]), axis=1))
-        # max_false = jnp.max(symbol_log_likelihood[:, self.bmap_idx_false], axis=1)
         log_likelihood_ratios = max_true - max_false
 
         # Compute the information loss for each sample
@@ -70,6 +63,33 @@ class Optimiser:
 
         # the GMI is the
         return (1 - information_loss / jnp.log(2)).sum()
+
+    def gmi_max_log(self, const: jnp.ndarray, rx: jnp.ndarray, tx_bits: jnp.ndarray, snr: float) -> jnp.ndarray:
+        """
+        Computes the generalized mutual information (GMI) using the max-log approximation.
+        """
+        a = (abs(const)**2).mean() * self.D
+        const /= a
+        # rx /= a
+
+        sigma = 10 ** (-snr / 20)
+        # Compute the squared distance between the received and constellation points
+        squared_distance = ((rx[:, None, :] - const[None, :, :]) ** 2).sum(axis=-1)
+
+        # Compute the symbol likelihood based on the squared distance and the variance sigma
+        symbol_log_likelihood = -squared_distance / sigma ** 2
+
+        # Compute the log likelihood ratios for each sample
+        max_true = jnp.max(symbol_log_likelihood[:, self.bmap_idx_true], axis=1)
+        max_false = jnp.max(symbol_log_likelihood[:, self.bmap_idx_false], axis=1)
+        log_likelihood_ratios = max_true - max_false
+
+        # Compute the information loss for each sample
+        information_loss = jnp.mean(jnp.log1p(jnp.exp((1 - 2 * tx_bits) * log_likelihood_ratios)), axis=0)
+
+        # the GMI is the
+        return (1 - information_loss / jnp.log(2)).sum()
+
 
     def make_gui(self) -> QWidget:
         return FLayout(
@@ -82,6 +102,10 @@ class Optimiser:
         return []
 
     def optimise(self, const, rx, tx_seq, snr) -> Tuple[jnp.ndarray, float]:
+        if jnp.iscomplexobj(rx):
+            rx = jnp.array([rx[0].real, rx[0].imag]).T
+        if jnp.iscomplexobj(tx_seq):
+            tx_seq = jnp.array([tx_seq[0].real, tx_seq[0].imag]).T
         nx = rx - jnp.take(const, tx_seq, axis=0)
         gmi = jax.jit(self.gmi_log_sum)(const, nx, tx_seq, snr)
         return const, gmi
@@ -97,6 +121,7 @@ class Optimiser:
         if not self.data['allow_decrease'] and gmi < self.data.get('gmi'):
             return const
         self.data['gmi'] = gmi
+        self.parent_data['gmi'] = gmi
         return new_const
 
 
@@ -105,8 +130,8 @@ class GradientDescentOpt(Optimiser):
 
     def _extra_gui_elements(self) -> List[Tuple[str, QWidget]]:
         return [
-            ("GMI (precise)", make_label(formatting='{:.5f}', bind=self.data.bind("gmi_f32", -np.Inf))),
-            ("GMI error", make_label(formatting='{:.6f}', bind=self.data.bind("gmi_delta", -np.Inf))),
+            # ("GMI (precise)", make_label(formatting='{:.5f}', bind=self.data.bind("gmi_f32", -np.Inf))),
+            # ("GMI error", make_label(formatting='{:.6f}', bind=self.data.bind("gmi_delta", -np.Inf))),
             ("||grad GMI||", make_label(formatting='{:.3f}', bind=self.data.bind("grad_gmi", 0.))),
             ("Learning rate (10^n)", make_float_input(-6, 2, 0.1, bind=self.data.bind("learning_rate", -1.))),
         ]
@@ -138,7 +163,7 @@ class GradientDescentOpt(Optimiser):
 class AdamOpt(Optimiser):
     NAME = 'ADAM'
 
-    def __init__(self, data: Connector, learning_rate=0.01):
+    def __init__(self, data: Connector, learning_rate=0.2):
         super().__init__(data)
         self.optimiser = optax.adam(learning_rate)
         self.opt_state = None
@@ -161,8 +186,10 @@ class AdamOpt(Optimiser):
 
         # scaling = np.sqrt(jnp.mean(jnp.sum(const ** 2, axis=1) / (self.D / 2)))
         nx = rx - jnp.take(const, tx_seq, axis=0)  # TODO: move
+        # tx_bits = jnp.take(self.bmap, tx_seq, axis=0)
 
         gmi, gmi_grad = jax.value_and_grad(self.gmi_log_sum)(const, nx, tx_seq, snr)
+        # gmi, gmi_grad = jax.value_and_grad(self.gmi_max_log)(const, rx, tx_bits, snr)
         if jnp.any(jnp.isnan(gmi_grad)):
             return const, gmi
         # gmi_grad /= scaling

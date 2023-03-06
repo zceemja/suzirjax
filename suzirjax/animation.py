@@ -10,11 +10,11 @@ from matplotlib.animation import FuncAnimation
 from rich.progress import Progress
 from rich import print
 
-from channels import Channel, AWGNChannel, PCAWGNChannel, ChalmersQAMpy
-from gui_helpers import Connector
-from modulation import get_modulation
-from optimiser import Optimiser, AdamOpt, GradientDescentOpt, RMSPropOpt, YogiOpt
-from utils import register_cmaps
+from suzirjax.channels import Channel, AWGNChannel, PCAWGNChannel, ChalmersQAMpy
+from suzirjax.gui_helpers import Connector
+from suzirjax.modulation import get_modulation
+from suzirjax.optimiser import Optimiser, AdamOpt, GradientDescentOpt, RMSPropOpt, YogiOpt
+from suzirjax.utils import register_cmaps
 import numpy as np
 
 register_cmaps()
