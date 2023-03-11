@@ -1,7 +1,7 @@
 # Suzirjax [_suzïr'yax_]
 UCL Optical Networks Group (ONG) Real-Time Constellation Shaper
 
-![demo.mp4](resources%2Fdemo.mp4)
+![demo.mp4](resources%2Fdemo.gif)
 
 ## What's here?
 Here you can find code for constellation shaping for AWGN/PC-AWGN simulation including pyQT5 gui, 
