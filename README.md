@@ -18,6 +18,12 @@ python side computation is implemented in [JAX](https://github.com/google/jax).
 Find out more in 
 [OFC23 Demo video](https://mediacentral.ucl.ac.uk/player?autostart=n&videoId=8ad172H5&captions=y&chapterId=0&playerJs=n)
 
+## Transnet Meeting 2023
+![transnet.png](resources%2Ftransnet.png)
+
+A demonstration of constellation shaping used in Transnet EAB meeting 2023-03-22. In a long
+[simulation video](https://mediacentral.ucl.ac.uk/flash/Ba94g80h_hd.mp4) channel noise oscillates between 10dB and 2.5dB SNR.
+
 ## Experimental setup
 Experimental setup includes single channel transmission over 1550nm with 
 real-time updatable channel and launch power parameters. Encoding and DSP is done remotely (server side), 
