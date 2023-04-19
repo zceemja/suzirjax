@@ -1,3 +1,5 @@
+from collections import deque
+
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 
@@ -19,13 +21,12 @@ class GMIHistoryWindow(QDialog):
             parent=self, widget_class=None))
         self.setWindowTitle('Suzirjax GMI History')
         self.setWindowIcon(QIcon(utils.get_resource('logo.png')))
-        data.on('gmi', lambda gmi: self.canvas.update_data(gmi), now=False)
-
-    # def _update(self, gmi):
-    #     self.canvas.gmi.append(gmi)
+        data.on('gmi', lambda gmi: self.canvas.update_data(gmi, self.isVisible()), now=False)
 
 
 class GMIHistoryCanvas(FigureCanvasQTAgg):
+    MAX_HIST = 2000
+
     def __init__(self, data):
         super().__init__()
         self.data = data
@@ -39,7 +40,8 @@ class GMIHistoryCanvas(FigureCanvasQTAgg):
         self.ax.set_title('GMI over time', color='white')
         self.ax.grid(axis='y')
 
-        self.gmi = []
+        self.gmi = deque(maxlen=self.MAX_HIST)
+        self.iteration_offset = 0
         self.im, = self.ax.plot(np.arange(len(self.gmi)), self.gmi, c='tab:blue', lw=1.6)
         self.ax.set_xlabel('Iterations', color='white')
         self.ax.set_ylabel('GMI (bit/2D symbol)', color='white')
@@ -49,21 +51,30 @@ class GMIHistoryCanvas(FigureCanvasQTAgg):
         # self.figure.canvas.blit(self.figure.bbox)
 
     def clear(self):
-        self.gmi = []
-        # self.render_graph()
-
-    def render_graph(self):
-        self.im.set_data(np.arange(len(self.gmi)), self.gmi)
-        self.ax.set_ylim([np.round(np.min(self.gmi) - 0.1, 1), np.round(np.max(self.gmi) + 0.1, 1)])
-        self.ax.set_xlim([0, len(self.gmi)])
+        self.gmi.clear()
+        self.iteration_offset = 0
+        self.im.set_data([0], [0])
+        self.ax.set_xlim([0, 1])
         self.ax.draw_artist(self.im)
         self.figure.canvas.draw()
         self.figure.canvas.flush_events()
 
-    def update_data(self, gmi):
+    def render_graph(self):
+        self.im.set_data(np.arange(len(self.gmi)) + self.iteration_offset, self.gmi)
+        self.ax.set_ylim([np.round(np.min(self.gmi) - 0.1, 1), np.round(np.max(self.gmi) + 0.1, 1)])
+        self.ax.set_xlim([self.iteration_offset, len(self.gmi) + self.iteration_offset])
+        if self.ax.get_renderer_cache() is not None:
+            self.ax.draw_artist(self.im)
+            self.figure.canvas.draw()
+            self.figure.canvas.flush_events()
+
+    def update_data(self, gmi, render=True):
         if np.isfinite(gmi):
+            if len(self.gmi) >= self.MAX_HIST:
+                self.iteration_offset += 1
             self.gmi.append(gmi)
-            self.render_graph()
+            if render:
+                self.render_graph()
 
 
 if __name__ == '__main__':

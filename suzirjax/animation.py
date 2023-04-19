@@ -70,10 +70,11 @@ class Animator:
         return d.T
 
     def _update(self, frame):
-        # if 400 <= frame <= 430:
-        #     self.channel.data['ase'] -= 0.25
-        # if 700 <= frame <= 730:
-        #     self.channel.data['ase'] += 0.25
+        if frame > 0:
+            if 1500 <= (frame % 3000) <= 1530:
+                self.channel.data['ase'] -= 0.25
+            if 2500 <= (frame % 3000) <= 2530:
+                self.channel.data['ase'] += 0.25
 
         """ SIMULATION """
         self.key, key2 = jax.random.split(self.key, 2)
@@ -243,10 +244,9 @@ if __name__ == '__main__':
     anim = Animator(data, const, channel, optimiser, seq_len=2 ** args.seq_size, width=args.resolution)
     anim.text = (
         f"Constellation points: {data['mod_points']}\n"
-        # f"Channel model: {channel.NAME}\n"
-        f"Channel model: Remote\n"
-        f"Payload shape: (2, {2**args.seq_size})\n"
-        # f"Channel SNR: {channel.data['ase']}dB\n"
+        f"Channel model: {channel.NAME}\n"
+        f"Sequence size: 2^{args.seq_size}\n"
+        f"Channel SNR: {channel.data['ase']}dB\n"
         f"Optimiser: {optimiser.NAME}\n"
         f"Optimiser learning rate: {args.lr}\n"
         f"UCL ONG Suzirjax (github.com/zceemja/suzirjax)"

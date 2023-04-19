@@ -64,13 +64,17 @@ class Optimiser:
         # the GMI is the
         return (1 - information_loss / jnp.log(2)).sum()
 
-    def gmi_max_log(self, const: jnp.ndarray, rx: jnp.ndarray, tx_bits: jnp.ndarray, snr: float) -> jnp.ndarray:
+    def gmi_max_log(self, const: jnp.ndarray, nx: jnp.ndarray, tx_seq: jnp.ndarray, snr: float) -> jnp.ndarray:
         """
         Computes the generalized mutual information (GMI) using the max-log approximation.
         """
-        a = (abs(const)**2).mean() * self.D
-        const /= a
-        # rx /= a
+        scaling = jnp.sqrt(jnp.mean(jnp.sum(const ** 2, axis=1) / (self.D / 2)))
+        const /= scaling
+        nx /= scaling
+
+        tx_bits = jnp.take(self.bmap, tx_seq, axis=0)
+        tx = jnp.take(const, tx_seq, axis=0)
+        rx = tx + nx
 
         sigma = 10 ** (-snr / 20)
         # Compute the squared distance between the received and constellation points
@@ -90,12 +94,15 @@ class Optimiser:
         # the GMI is the
         return (1 - information_loss / jnp.log(2)).sum()
 
-
     def make_gui(self) -> QWidget:
         return FLayout(
             ("GMI", make_label(formatting='{:.5f}', bind=self.data.bind("gmi", -np.Inf))),
             *self._extra_gui_elements(),
             ("Allow decrease", make_checkbox(bind=self.data.bind("allow_decrease", True))),
+            # ("GMI Method", make_combo_dict({
+            #     'Log-Sum': self.gmi_log_sum,
+            #     'Max-Log': self.gmi_max_log,
+            # }, bind=self.data.bind("gmi_method", self.gmi_log_sum))),
         )
 
     def _extra_gui_elements(self) -> List[Tuple[str, QWidget]]:
@@ -107,7 +114,7 @@ class Optimiser:
         if jnp.iscomplexobj(tx_seq):
             tx_seq = jnp.array([tx_seq[0].real, tx_seq[0].imag]).T
         nx = rx - jnp.take(const, tx_seq, axis=0)
-        gmi = jax.jit(self.gmi_log_sum)(const, nx, tx_seq, snr)
+        gmi = jax.jit(self.data['gmi_method'])(const, nx, tx_seq, snr)
         return const, gmi
 
     def update(self, const: jnp.ndarray, rx: jnp.ndarray, snr: float, tx_seq: jnp.ndarray = None) -> jnp.ndarray:

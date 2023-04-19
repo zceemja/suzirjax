@@ -1,4 +1,4 @@
-import copy
+from __future__ import annotations
 
 import matplotlib
 from matplotlib.backends.backend_agg import FigureCanvasAgg
