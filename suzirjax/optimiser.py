@@ -114,7 +114,7 @@ class Optimiser:
         if jnp.iscomplexobj(tx_seq):
             tx_seq = jnp.array([tx_seq[0].real, tx_seq[0].imag]).T
         nx = rx - jnp.take(const, tx_seq, axis=0)
-        gmi = jax.jit(self.data['gmi_method'])(const, nx, tx_seq, snr)
+        gmi = jax.jit(self.gmi_log_sum)(const, nx, tx_seq, snr)
         return const, gmi
 
     def update(self, const: jnp.ndarray, rx: jnp.ndarray, snr: float, tx_seq: jnp.ndarray = None) -> jnp.ndarray:
