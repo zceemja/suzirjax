@@ -10,10 +10,9 @@ from suzirjax.optimiser import OPTIMISERS
 from suzirjax.simulation import Simulation
 from suzirjax.utils import register_cmaps
 
-from PyQt5.QtCore import QTimer
+from PyQt5.QtCore import QTimer, QT_VERSION_STR
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 import matplotlib
 import numpy as np
 
@@ -58,11 +57,11 @@ class ApplicationWidget(QFrame):
 
         self.control_widget = VLayout(
             FLayout(
-                ("Seq. Length (2^n)", make_int_input(11, 14, bind=self.data.bind("seq_length", 11))),
+                ("Seq. Length (2^n)", make_int_input(11, 17, bind=self.data.bind("seq_length", 11))),
                 ("Channel", make_combo_dict(
-                    self.channels, bind=self.data.bind("channel",  self.channels[CHANNELS[0].NAME]))),
+                    self.channels, bind=self.data.bind("channel", self.channels[CHANNELS[0].NAME]))),
                 ("Optimiser", make_combo_dict(
-                    self.optimisers, bind=self.data.bind("optimiser",  self.optimisers[OPTIMISERS[0].NAME]))),
+                    self.optimisers, bind=self.data.bind("optimiser", self.optimisers[OPTIMISERS[0].NAME]))),
                 ("Show received", make_checkbox(bind=self.data.bind("show_rx", True))),
                 ("Show constellation", make_checkbox(bind=self.data.bind("show_c", True))),
                 ("Show bitmap", make_checkbox(bind=self.data.bind("show_bmap", True))),
@@ -96,6 +95,18 @@ class ApplicationWidget(QFrame):
             self.control_widget, self.const_canvas, parent=self
         ))
         layout.addWidget(self.progress)
+
+        if isinstance(parent, QMainWindow):
+            parent.setMenuBar(make_menubar({
+                "&File": [
+                    ("Save &Constellation", self.const_canvas.save),
+                    ("Save &GMI History", self.gmi_hist.canvas.save),
+                    ("&Exit", QApplication.instance().quit),
+                ],
+                "&Help": [
+                    ("&About", self.about_dialog),
+                ]
+            }, parent=parent))
         self.sim.start()
 
     def _progress_stop(self):
@@ -122,6 +133,15 @@ class ApplicationWidget(QFrame):
         self.sim.wait()
         print("Shutting down")
 
+    def about_dialog(self, _):
+        make_dialog("About", VLayout(
+            "Suzirjax",
+            "Python: " + sys.version.split('\n')[0],
+            "JAX: " + jax.__version__,
+            "QT: " + QT_VERSION_STR,
+            "Matplotlib: " + matplotlib.__version__,
+        ), buttons=QDialogButtonBox.Close, parent=self).exec()
+
     def new_constellation(self, _):
         dlgc = Connector()
         dlg = make_dialog("New Constellation", FLayout(
@@ -146,7 +166,7 @@ class ApplicationWidget(QFrame):
             self.data['mod_points'] = dlgc['mod_points']
 
 
-class ConstellationCanvas(FigureCanvasQTAgg):
+class ConstellationCanvas(FigureCanvas):
     # LIM = 1 + 2 ** -.5  # Should match simulation.py HIST_LIM
     LIM = Simulation.HIST_LIM
     TEXT_OFFSET = 0.05

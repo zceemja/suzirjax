@@ -1,8 +1,5 @@
 from collections import deque
 
-from matplotlib import pyplot as plt
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
-
 from suzirjax import utils
 from suzirjax.gui_helpers import *
 from PyQt5.QtWidgets import *
@@ -24,7 +21,7 @@ class GMIHistoryWindow(QDialog):
         data.on('gmi', lambda gmi: self.canvas.update_data(gmi, self.isVisible()), now=False)
 
 
-class GMIHistoryCanvas(FigureCanvasQTAgg):
+class GMIHistoryCanvas(FigureCanvas):
     MAX_HIST = 2000
 
     def __init__(self, data):

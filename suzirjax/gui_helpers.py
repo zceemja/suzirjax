@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import matplotlib
+from matplotlib import pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
-from typing import List, Tuple, TypeVar, Union, Any, Dict
+from typing import List, Tuple, TypeVar, Union, Any, Dict, Callable
 from inspect import signature
 
 __all__ = []
@@ -108,6 +111,8 @@ class Connector:
 
 def make_widget_layout(layout, widgets, parent=None, widget_class=QWidget):
     for w in widgets:
+        if isinstance(w, str):
+            w = QLabel(w)
         layout.addWidget(w)
 
     if widget_class is not None:
@@ -118,12 +123,12 @@ def make_widget_layout(layout, widgets, parent=None, widget_class=QWidget):
 
 
 @export
-def HLayout(*widgets: QWidget, parent=None, widget_class=QWidget) -> QWidget:
+def HLayout(*widgets: QWidget | str, parent=None, widget_class=QWidget) -> QWidget:
     return make_widget_layout(QHBoxLayout(), widgets, parent=parent, widget_class=widget_class)
 
 
 @export
-def VLayout(*widgets: QWidget, parent=None, widget_class=QWidget) -> QWidget:
+def VLayout(*widgets: QWidget | str, parent=None, widget_class=QWidget) -> QWidget:
     return make_widget_layout(QVBoxLayout(), widgets, parent=parent, widget_class=widget_class)
 
 
@@ -260,6 +265,7 @@ def make_radio_buttons(*options: Tuple[str, Any], parent=None, bind: ConnectorVa
         wget.toggled.connect(lambda _: bind.set(val))
         layout.addWidget(wget)
         val_map[val] = wget
+
     [__reg(n, v) for n, v in options]
 
     def _toggle(val):
@@ -312,3 +318,35 @@ def make_latex(tex: str, fontsize=18) -> QWidget:
     label.setPixmap(QPixmap(qimage))
 
     return label
+
+
+@export
+def make_menubar(menus: Dict[str, List[QAction | Tuple[str, Callable]]], parent=None) -> QMenuBar:
+    menubar = QMenuBar(parent)
+    for name, actions in menus.items():
+        menu = QMenu(name, parent)
+        menubar.addMenu(menu)
+        for action in actions:
+            if isinstance(action, tuple):
+                action_name, action_call = action
+                action = QAction(action_name, parent)
+                action.triggered.connect(action_call)
+            menu.addAction(action)
+    return menubar
+
+
+@export
+class FigureCanvas(FigureCanvasQTAgg):
+
+    def save(self):
+        options = QFileDialog.Options()
+        dialog = QFileDialog()
+        dialog.setAcceptMode(QFileDialog.AcceptSave)
+        dialog.setOptions(options)
+        supported = plt.gcf().canvas.get_supported_filetypes()
+        format_map = {f"{name} (*.{ext})": ext for ext, name in supported.items()}
+        dialog.setNameFilters(format_map.keys())
+        if dialog.exec_() == QDialog.Accepted:
+            path = dialog.selectedFiles()[0]  # returns a list
+            file_format = format_map[dialog.selectedNameFilter()]
+            self.figure.savefig(path + "." + file_format, format=file_format)
