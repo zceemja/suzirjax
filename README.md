@@ -7,7 +7,7 @@ UCL Optical Networks Group (ONG) Real-Time Constellation Shaper
 Here you can find code for constellation shaping for AWGN/PC-AWGN simulation including pyQT5 gui, 
 or headless "animator" to produce lovely mp4 animations.
 
-It also includes "remove channel" that connects to the lab and does experimental transmission.
+It also includes "remote channel" that connects to the lab and does experimental transmission.
 DSP is mostly handled by [QAMpy](http://qampy.org/) library.
 
 ## Reason for naming
