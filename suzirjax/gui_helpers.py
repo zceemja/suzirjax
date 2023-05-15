@@ -7,6 +7,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
+from PyQt5 import QtCore
 from typing import List, Tuple, TypeVar, Union, Any, Dict, Callable
 from inspect import signature
 
@@ -343,10 +344,42 @@ class FigureCanvas(FigureCanvasQTAgg):
         dialog = QFileDialog()
         dialog.setAcceptMode(QFileDialog.AcceptSave)
         dialog.setOptions(options)
-        supported = plt.gcf().canvas.get_supported_filetypes()
-        format_map = {f"{name} (*.{ext})": ext for ext, name in supported.items()}
+        format_map = {f"{name} (*.{ext})": ext for ext, name in self.filetypes.items()}
         dialog.setNameFilters(format_map.keys())
         if dialog.exec_() == QDialog.Accepted:
             path = dialog.selectedFiles()[0]  # returns a list
             file_format = format_map[dialog.selectedNameFilter()]
-            self.figure.savefig(path + "." + file_format, format=file_format)
+            if not path.lower().endswith(file_format):
+                path += "." + file_format
+            self.figure.savefig(path, format=file_format)
+
+
+@export
+def make_content_menu(*actions, parent=None) -> QMenu:
+    menu = QMenu(parent)
+    for item in actions:
+        if isinstance(item, tuple):
+            name, func = item
+            action = QAction(name, parent)
+            action.triggered.connect(func)
+            menu.addAction(action)
+        elif item is None:
+            menu.addSeparator()
+        else:
+            menu.addAction(item)
+    return menu
+
+
+@export
+def add_right_clk_menu(wget: QWidget, *actions, parent=None):
+    menu = make_content_menu(*actions, parent=parent)
+    wget.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+    wget.customContextMenuRequested.connect(lambda point: menu.exec_(wget.mapToGlobal(point)))
+
+@export
+def make_checkable_action(name, bind: ConnectorValue, parent=None):
+    action = QAction(name, parent)
+    action.setCheckable(True)
+    bind.on(lambda x: action.setChecked(x))
+    action.triggered.connect(lambda _: bind.set(action.isChecked()))
+    return action

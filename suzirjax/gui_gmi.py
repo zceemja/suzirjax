@@ -43,6 +43,13 @@ class GMIHistoryCanvas(FigureCanvas):
         self.ax.set_xlabel('Iterations', color='white')
         self.ax.set_ylabel('GMI (bit/2D symbol)', color='white')
         self.figure.tight_layout()
+
+        add_right_clk_menu(
+            self,
+            ("Clear", self.clear),
+            ("Save as", self.save),
+            parent=self,
+        )
         # self.bg = self.figure.canvas.copy_from_bbox(self.figure.bbox)
         # self.ax.draw_artist(self.im)
         # self.figure.canvas.blit(self.figure.bbox)
