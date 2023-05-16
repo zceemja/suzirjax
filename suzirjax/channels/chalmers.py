@@ -70,7 +70,7 @@ class ChalmersQAMpy(Channel):
         return FLayout(
             ("Sample Rate (GHz)", make_float_input(1, 300, 1, bind=self.data.bind("fb", 25))),
             ("Linewidth (kHz)", make_float_input(1, 1e6, 1, bind=self.data.bind("linewidth", 100))),
-            ("AES (dB)", make_float_input(-10, 40, 1, bind=self.data.bind("ase", 15))),
+            ("Noise (dB)", make_float_input(-10, 40, 1, bind=self.data.bind("noise", 15))),
             ("Sync taps", make_int_input(1, 300, 1, bind=self.data.bind("ntaps", 17))),
             ("Enable CPE", make_checkbox(bind=self.data.bind("cpe_en", True))),
             ("Frame Synced", make_label(bind=self.data.bind("synced", False))),
@@ -109,7 +109,7 @@ class ChalmersQAMpy(Channel):
                 return tx, 0
             failed += 1
             sig2 = impairments.apply_phase_noise(sig, self.data['linewidth'] * 1e3)
-            sig2 = impairments.change_snr(sig2, self.data['ase'])
+            sig2 = impairments.change_snr(sig2, self.data['noise'])
             sig2 = impairments.rotate_field(sig2, np.pi / 0.1)
 
             sig2 = analog_frontend.orthonormalize_signal(sig2)

@@ -37,24 +37,23 @@ class ApplicationWidget(QFrame):
         self.channels = {ch.NAME: ch(self) for ch in CHANNELS}
         self.optimisers = {opt.NAME: opt(self.data) for opt in OPTIMISERS}
 
-        # self.key, key0 = jax.random.split(jax.random.PRNGKey(time.time_ns()), 2)
         self.quitting = False
         self.const_canvas = ConstellationCanvas(self.data)
 
         ## Simulation
         init_const = np.random.rand(32, 2) * 2 - 1
         self.sim = Simulation(self.data, init_const, parent=self)
-        self.progress = QProgressBar(self)
-        self.progress_timer = QTimer()
 
         self.sim.signal.result.connect(self.const_canvas.update_data)
-        self.sim.signal.start.connect(self._progress_start)
-        self.sim.signal.complete.connect(self._progress_stop)
-        self.progress_timer.timeout.connect(self._progress_update)
+
+        # This lets GUI thread to catch up with events before running next sim
+        self.sim.signal.result.connect(lambda _: self.sim.cont())
+
         self.sim_btn = make_button("", lambda _: self.sim.toggle_pause(), self)
         self.data.on('sim_running', lambda r: self.sim_btn.setText('Stop' if r else 'Start'))
         self.data.on('channel', lambda _, c: c.terminate(), now=False, call_on_none=False)
         self.gmi_hist = GMIHistoryWindow(self.data, self)
+        self.data['show_rx'] = True
 
         self.control_widget = VLayout(
             FLayout(
@@ -63,9 +62,6 @@ class ApplicationWidget(QFrame):
                     self.channels, bind=self.data.bind("channel", self.channels[CHANNELS[0].NAME]))),
                 ("Optimiser", make_combo_dict(
                     self.optimisers, bind=self.data.bind("optimiser", self.optimisers[OPTIMISERS[0].NAME]))),
-                ("Show received", make_checkbox(bind=self.data.bind("show_rx", True))),
-                ("Show constellation", make_checkbox(bind=self.data.bind("show_c", True))),
-                ("Show bitmap", make_checkbox(bind=self.data.bind("show_bmap", True))),
                 ("GMI History", make_button('Show', lambda _: self.gmi_hist.show())),
             ),
             *[
@@ -95,8 +91,7 @@ class ApplicationWidget(QFrame):
         layout.addWidget(HLayout(
             self.control_widget, self.const_canvas, parent=self
         ))
-        layout.addWidget(self.progress)
-
+        # layout.addWidget(self.progress)
         if isinstance(parent, QMainWindow):
             parent.setMenuBar(make_menubar({
                 "&File": [

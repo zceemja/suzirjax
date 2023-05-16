@@ -1,4 +1,5 @@
 import threading
+import time
 
 import jax
 from PyQt5.QtCore import QObject, pyqtSignal
@@ -55,6 +56,10 @@ class Simulation(QWidget):
         self._paused.set()
         self.data['sim_running'] = True
 
+    def cont(self):
+        if self.data['sim_running']:
+            self._paused.set()
+
     def toggle_pause(self):
         self.pause() if self._paused.isSet() else self.resume()
 
@@ -89,6 +94,7 @@ class Simulation(QWidget):
         const /= np.sqrt((abs(const)**2).mean() * 2)
         rx /= np.sqrt((abs(rx) ** 2).mean() * 2)
         hist = self._make_hist(rx)
+        self._paused.clear()
         self.signal.result.emit(const, hist)
 
     def _loop(self):
@@ -97,6 +103,5 @@ class Simulation(QWidget):
             self._simulate()
             if self._single:
                 self._single = False
-                self._paused.clear()
             self._paused.wait()
         print("Closing simulation loop")
