@@ -102,9 +102,9 @@ def get_modulation(name: str, unit_power=True) -> np.ndarray:
     elif name == 'PSK':
         c = make_psk(points)
     elif name == 'ASK':
-        c = make_ask(points)
+        c = make_ask(points) + 0j
     elif name == 'PAM':
-        c = make_pam(points)
+        c = make_pam(points) + 0j
     elif name == 'QAM':
         c = make_qam(points)
     elif name == 'RAND':
