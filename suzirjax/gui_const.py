@@ -9,7 +9,6 @@ from PyQt5.QtGui import *
 
 import numpy as np
 
-
 class ConstellationCanvas(FigureCanvas):
     # LIM = 1 + 2 ** -.5  # Should match simulation.py HIST_LIM
     LIM = Simulation.HIST_LIM
@@ -33,6 +32,7 @@ class ConstellationCanvas(FigureCanvas):
 
         self.h_plt = None
         self.c_plt = None
+        self.v_plt = None
         self.bg = None
         self.last_const = None
 
@@ -43,6 +43,7 @@ class ConstellationCanvas(FigureCanvas):
             # make_checkable_action("Show received", self.data.bind("show_rx", True), self),
             make_checkable_action("Show constellation", self.data.bind("show_c", True), self),
             make_checkable_action("Show bitmap", self.data.bind("show_bmap", True), self),
+            make_checkable_action("Show vectors", self.data.bind("show_vec", False), self),
             # ("Show received", lambda: self.data.set("show_rx", not self.data["show_rx"])),
             # ("Show constellation", lambda: self.data.set("show_c", not self.data["show_c"])),
             # ("Show bitmap", lambda: self.data.set("show_bmap", not self.data["show_bmap"])),
@@ -59,6 +60,8 @@ class ConstellationCanvas(FigureCanvas):
         if self.data['show_bmap']:
             for text in self.const_text:
                 self.ax.draw_artist(text)
+        if self.data['show_vec'] and self.v_plt is not None:
+            self.ax.draw_artist(self.v_plt)
         self.figure.canvas.blit(self.figure.bbox)
         self.figure.canvas.flush_events()
 
@@ -84,6 +87,14 @@ class ConstellationCanvas(FigureCanvas):
             self._update_points()
 
         # Not initialised yet
+        if self.data['gmi_grad'] is not None and self.v_plt is None:
+            self.v_plt = self.ax.quiver(
+                const[:, 0], const[:, 1], self.data['gmi_grad'][:, 0], self.data['gmi_grad'][:, 1],
+                color='aqua', width=0.003)
+            self.v_plt.set_visible(self.data['show_vec'])
+            self.data.on('show_vec', lambda x: (self.v_plt.set_visible(x), self._redraw()), now=False)
+
+        # Not initialised yet
         if self.h_plt is None:
             self.bg = self.figure.canvas.copy_from_bbox(self.figure.bbox)
 
@@ -102,6 +113,9 @@ class ConstellationCanvas(FigureCanvas):
             for text in self.const_text:
                 self.ax.draw_artist(text)
 
+            if self.v_plt is not None:
+                self.ax.draw_artist(self.v_plt)
+
             self.data.on('show_rx', lambda x: (self.h_plt.set_visible(x), self._redraw()), now=False)
             self.data.on('show_c', lambda x: (self.c_plt.set_visible(x), self._redraw()), now=False)
             self.data.on('show_bmap', lambda x: ([t.set_visible(x) for t in self.const_text], self._redraw()), now=False)
@@ -112,6 +126,9 @@ class ConstellationCanvas(FigureCanvas):
                 self.h_plt.set_data(hist)
             if self.data['show_c']:
                 self.c_plt.set_data(const[:, 0], const[:, 1])
+            if self.data['show_vec'] and self.v_plt is not None:
+                self.v_plt.set_offsets(const)
+                self.v_plt.set_UVC(self.data['gmi_grad'][:, 0], self.data['gmi_grad'][:, 1])
             if self.data['show_bmap']:
                 for i, text in enumerate(self.const_text):
                     if np.all(np.isfinite(const[i])):

@@ -63,7 +63,7 @@ class Connector:
             raise ValueError(f"Callback {callback} needs more than two arguments")
 
     def set(self, name, value) -> 'Connector':
-        if self.data.get(name) == value:
+        if not self.data.get(name).__class__.__name__.endswith('Array') and self.data.get(name) == value:
             return self
         previous = self.data.get(name)
         self.data[name] = value

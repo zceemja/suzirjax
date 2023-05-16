@@ -122,7 +122,7 @@ class Optimiser:
             tx_seq = jnp.tile(jnp.arange(self.M), (rx.shape[0] // self.M))
 
         new_const, gmi = self.optimise(const, rx, tx_seq, snr)
-        new_const /= jnp.sqrt(jnp.mean(jnp.abs(const)**2))
+        new_const /= jnp.sqrt(jnp.mean(jnp.abs(const) ** 2))
         if jnp.isnan(gmi):
             return const
         if not self.data['allow_decrease'] and gmi < self.data.get('gmi'):
@@ -141,6 +141,7 @@ class GradientDescentOpt(Optimiser):
             # ("GMI error", make_label(formatting='{:.6f}', bind=self.data.bind("gmi_delta", -np.Inf))),
             ("||grad GMI||", make_label(formatting='{:.3f}', bind=self.data.bind("grad_gmi", 0.))),
             ("Learning rate (10^n)", make_float_input(-6, 2, 0.1, bind=self.data.bind("learning_rate", -1.))),
+            # ("Gradient Symmetry", make_checkbox(bind=self.data.bind("symmetry", False))),
         ]
 
     def optimise(self, const, rx, tx_seq, snr) -> Tuple[jnp.ndarray, float]:
@@ -158,9 +159,23 @@ class GradientDescentOpt(Optimiser):
 
         nx = rx - jnp.take(const, tx_seq, axis=0)
         gmi, gmi_grad = jax.value_and_grad(self.gmi_log_sum)(const, nx, tx_seq, snr)
+
         if jnp.any(jnp.isnan(gmi_grad)):
+            self.parent_data['gmi_grad'] = gmi_grad
             return const, gmi
 
+            # gmi_grad = gmi_grad
+
+        # if self.data['symmetry']:
+        #     inv = jnp.array([[1, 1], [1, -1], [-1, 1], [-1, -1]], dtype=float)
+        #     gmi_grad = gmi_grad[:gmi_grad.shape[0] // 4]
+        #     gmi_grad = inv[None, :, :] * gmi_grad[:, None, :]
+        #     gmi_grad = gmi_grad.transpose((1, 0, 2)).reshape(-1, 2)
+        #     const = const[:const.shape[0] // 4]
+        #     const = inv[None, :, :] * const[:, None, :]
+        #     const = const.transpose((1, 0, 2)).reshape(-1, 2)
+
+        self.parent_data['gmi_grad'] = gmi_grad
         const += 10 ** self.data['learning_rate'] * gmi_grad
         # const /= jnp.sqrt(jnp.mean(jnp.sum(const ** 2, axis=1)))
         self.data['grad_gmi'] = jnp.sqrt((gmi_grad ** 2).sum())
@@ -196,6 +211,8 @@ class AdamOpt(Optimiser):
         # tx_bits = jnp.take(self.bmap, tx_seq, axis=0)
 
         gmi, gmi_grad = jax.value_and_grad(self.gmi_log_sum)(const, nx, tx_seq, snr)
+        self.parent_data['gmi_grad'] = gmi_grad
+
         # gmi, gmi_grad = jax.value_and_grad(self.gmi_max_log)(const, rx, tx_bits, snr)
         if jnp.any(jnp.isnan(gmi_grad)):
             return const, gmi
