@@ -53,14 +53,14 @@ class ConstellationCanvas(FigureCanvas):
         )
 
     def _redraw(self):
-        if self.data['show_rx']:
+        if self.h_plt is not None and self.data['show_rx']:
             self.ax.draw_artist(self.h_plt)
-        if self.data['show_c']:
+        if self.c_plt is not None and self.data['show_c']:
             self.ax.draw_artist(self.c_plt)
         if self.data['show_bmap']:
             for text in self.const_text:
                 self.ax.draw_artist(text)
-        if self.data['show_vec'] and self.v_plt is not None:
+        if self.v_plt is not None and self.data['show_vec']:
             self.ax.draw_artist(self.v_plt)
         self.figure.canvas.blit(self.figure.bbox)
         self.figure.canvas.flush_events()
@@ -81,57 +81,48 @@ class ConstellationCanvas(FigureCanvas):
                 text, c='magenta', fontsize=8
             ))
 
-    def update_data(self, const, hist):
+    def update_data(self, const, hist=None):
         if self.last_const is None or const.shape[0] != self.last_const.shape[0]:
             self.last_const = const
             self._update_points()
 
-        # Not initialised yet
-        if self.data['gmi_grad'] is not None and self.v_plt is None:
-            self.v_plt = self.ax.quiver(
-                const[:, 0], const[:, 1], self.data['gmi_grad'][:, 0], self.data['gmi_grad'][:, 1],
-                color='aqua', width=0.003)
-            self.v_plt.set_visible(self.data['show_vec'])
-            self.data.on('show_vec', lambda x: (self.v_plt.set_visible(x), self._redraw()), now=False)
-
-        # Not initialised yet
-        if self.h_plt is None:
-            self.bg = self.figure.canvas.copy_from_bbox(self.figure.bbox)
-
+        # Initialising
+        initial = False
+        if self.h_plt is None and hist is not None:
             self.h_plt = self.ax.imshow(
                 hist, interpolation='bicubic', extent=[-self.LIM, self.LIM, -self.LIM, self.LIM],
                 origin='lower', cmap='sillekens', animated=True)  # kindlmann, sillekens
-            self.c_plt, = self.ax.plot(const[:, 0], const[:, 1], '.', c='magenta', animated=True)
-
             self.h_plt.set_visible(self.data['show_rx'])
+            self.data.on('show_rx', lambda x: (self.h_plt.set_visible(x), self._redraw()), now=False)
+
+        if self.c_plt is None and const is not None:
+            self.c_plt, = self.ax.plot(const[:, 0], const[:, 1], '.', c='magenta', animated=True)
             self.c_plt.set_visible(self.data['show_c'])
             for text in self.const_text:
                 text.set_visible(self.data['show_bmap'])
-
-            self.ax.draw_artist(self.h_plt)
-            self.ax.draw_artist(self.c_plt)
-            for text in self.const_text:
-                self.ax.draw_artist(text)
-
-            if self.v_plt is not None:
-                self.ax.draw_artist(self.v_plt)
-
-            self.data.on('show_rx', lambda x: (self.h_plt.set_visible(x), self._redraw()), now=False)
             self.data.on('show_c', lambda x: (self.c_plt.set_visible(x), self._redraw()), now=False)
             self.data.on('show_bmap', lambda x: ([t.set_visible(x) for t in self.const_text], self._redraw()), now=False)
 
-            self.figure.canvas.blit(self.figure.bbox)
-        else:
-            if self.data['show_rx']:
-                self.h_plt.set_data(hist)
-            if self.data['show_c']:
-                self.c_plt.set_data(const[:, 0], const[:, 1])
-            if self.data['show_vec'] and self.v_plt is not None:
-                self.v_plt.set_offsets(const)
-                self.v_plt.set_UVC(self.data['gmi_grad'][:, 0], self.data['gmi_grad'][:, 1])
-            if self.data['show_bmap']:
-                for i, text in enumerate(self.const_text):
-                    if np.all(np.isfinite(const[i])):
-                        text.set_x(const[i, 0] + self.TEXT_OFFSET)
-                        text.set_y(const[i, 1] + self.TEXT_OFFSET)
-            self._redraw()
+        if self.v_plt is None and self.data['gmi_grad'] is not None:
+            self.v_plt = self.ax.quiver(
+                const[:, 0], const[:, 1], self.data['gmi_grad'][:, 0], self.data['gmi_grad'][:, 1],
+                color='aqua', width=0.003, animated=True)
+            self.v_plt.set_visible(self.data['show_vec'])
+            self.data.on('show_vec', lambda x: (self.v_plt.set_visible(x), self._redraw()), now=False)
+
+        # Drawing
+        if self.h_plt is not None and self.data['show_rx']:
+            if hist is None:
+                hist = np.zeros((128, 128))
+            self.h_plt.set_data(hist)
+        if self.c_plt is not None and self.data['show_c']:
+            self.c_plt.set_data(const[:, 0], const[:, 1])
+        if self.v_plt is not None and self.data['show_vec']:
+            self.v_plt.set_offsets(const)
+            self.v_plt.set_UVC(self.data['gmi_grad'][:, 0], self.data['gmi_grad'][:, 1])
+        if self.c_plt is not None and self.data['show_bmap']:
+            for i, text in enumerate(self.const_text):
+                if np.all(np.isfinite(const[i])):
+                    text.set_x(const[i, 0] + self.TEXT_OFFSET)
+                    text.set_y(const[i, 1] + self.TEXT_OFFSET)
+        self._redraw()

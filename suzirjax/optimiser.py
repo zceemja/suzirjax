@@ -141,7 +141,7 @@ class GradientDescentOpt(Optimiser):
             # ("GMI error", make_label(formatting='{:.6f}', bind=self.data.bind("gmi_delta", -np.Inf))),
             ("||grad GMI||", make_label(formatting='{:.3f}', bind=self.data.bind("grad_gmi", 0.))),
             ("Learning rate (10^n)", make_float_input(-6, 2, 0.1, bind=self.data.bind("learning_rate", -1.))),
-            # ("Gradient Symmetry", make_checkbox(bind=self.data.bind("symmetry", False))),
+            ("Gradient Symmetry", make_checkbox(bind=self.data.bind("symmetry", False))),
         ]
 
     def optimise(self, const, rx, tx_seq, snr) -> Tuple[jnp.ndarray, float]:
@@ -166,14 +166,14 @@ class GradientDescentOpt(Optimiser):
 
             # gmi_grad = gmi_grad
 
-        # if self.data['symmetry']:
-        #     inv = jnp.array([[1, 1], [1, -1], [-1, 1], [-1, -1]], dtype=float)
-        #     gmi_grad = gmi_grad[:gmi_grad.shape[0] // 4]
-        #     gmi_grad = inv[None, :, :] * gmi_grad[:, None, :]
-        #     gmi_grad = gmi_grad.transpose((1, 0, 2)).reshape(-1, 2)
-        #     const = const[:const.shape[0] // 4]
-        #     const = inv[None, :, :] * const[:, None, :]
-        #     const = const.transpose((1, 0, 2)).reshape(-1, 2)
+        if self.data['symmetry']:
+            inv = jnp.array([[1, 1], [1, -1], [-1, 1], [-1, -1]], dtype=float)
+            gmi_grad = gmi_grad[:gmi_grad.shape[0] // 4]
+            gmi_grad = inv[None, :, :] * gmi_grad[:, None, :]
+            gmi_grad = gmi_grad.transpose((1, 0, 2)).reshape(-1, 2)
+            const = const[:const.shape[0] // 4]
+            const = inv[None, :, :] * const[:, None, :]
+            const = const.transpose((1, 0, 2)).reshape(-1, 2)
 
         self.parent_data['gmi_grad'] = gmi_grad
         const += 10 ** self.data['learning_rate'] * gmi_grad

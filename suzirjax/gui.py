@@ -6,16 +6,17 @@ from suzirjax.gui_gmi import GMIHistoryWindow
 from suzirjax.gui_const import ConstellationCanvas
 from suzirjax.gui_helpers import *
 from suzirjax.channels import CHANNELS
-from suzirjax.modulation import MODULATIONS, get_modulation
+from suzirjax.modulation import MODULATIONS, get_modulation, relabel
 from suzirjax.optimiser import OPTIMISERS
 from suzirjax.simulation import Simulation
 from suzirjax.utils import register_cmaps
 
-from PyQt5.QtCore import QTimer, QT_VERSION_STR
+from PyQt5.QtCore import QT_VERSION_STR
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 import matplotlib
 import numpy as np
+from jax import numpy as jnp
 
 matplotlib.use('Qt5Agg')
 register_cmaps()
@@ -63,6 +64,7 @@ class ApplicationWidget(QFrame):
                 ("Optimiser", make_combo_dict(
                     self.optimisers, bind=self.data.bind("optimiser", self.optimisers[OPTIMISERS[0].NAME]))),
                 ("GMI History", make_button('Show', lambda _: self.gmi_hist.show())),
+                # ("", make_button('Relabel', self._relabel)),
             ),
             *[
                 make_hidden_group(channel.make_gui(), bind=self.data.bind("channel"), bind_value=channel)[0]
@@ -104,6 +106,13 @@ class ApplicationWidget(QFrame):
                 ]
             }, parent=parent))
         self.sim.start()
+
+    # def _relabel(self, _):
+    #     const = relabel(self.sim.const)
+    #     # const = self.sim.const
+    #     const /= np.sqrt((abs(const) ** 2).mean() * 2)
+    #     self.sim.set_const(const)
+    #     self.const_canvas.update_data(const, None)
 
     def _progress_stop(self):
         self.progress_timer.stop()
@@ -160,6 +169,7 @@ class ApplicationWidget(QFrame):
                 self.sim.set_const(a.T)
             self.data['mod_name'] = dlgc['mod_name']
             self.data['mod_points'] = dlgc['mod_points']
+            self.const_canvas.update_data(self.sim.const, None)
 
 
 if __name__ == '__main__':

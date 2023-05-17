@@ -42,6 +42,10 @@ class Simulation(QWidget):
         self._thread = threading.Thread(name='simulation_loop', target=self._loop)
         self._single = False
 
+    @property
+    def const(self):
+        return self._const
+
     def start(self):
         self._thread.start()
 
