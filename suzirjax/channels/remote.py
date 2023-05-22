@@ -29,6 +29,7 @@ class RemoteChannel(Channel):
         self.btn_connect.clicked.connect(self._btn_connect)
         self.queue = queue.Queue(maxsize=1)
         self.ndff_window = NDFFWindow(self.data)
+        self.init = False
 
         self.data.on('linewidth', lambda val: self._send_config('linewidth', val * 1e3), now=False)
         self.data.on('snr', lambda val: self._send_config('snr', val), now=False)
@@ -38,6 +39,7 @@ class RemoteChannel(Channel):
         self.data.on('impairments', lambda val: self._send_config('impairments', val), now=False)
         self.data.on('impairments_snr', lambda val: self._send_config('impairments_snr', val), now=False)
         self.data.on('impairments_linewidth', lambda val: self._send_config('impairments_linewidth', val), now=False)
+
 
         @self.sio.event
         def connect():
@@ -51,6 +53,7 @@ class RemoteChannel(Channel):
         def disconnect():
             print("Socket disconnected")
             self.data['conn'] = False
+            self.init = False
             self.btn_connect.setText('Connect')
 
         # @self.sio.event
@@ -73,22 +76,26 @@ class RemoteChannel(Channel):
 
         @self.sio.event
         def status(data):
+            # print(data)
+            # return
             self.data['power_mon_in'] = data['power_in']
             self.data['power_mon_out'] = data['power_out']
-            self.data['ndff_pow0_in'] = data['ndff_pow0_in']
-            self.data['ndff_pow0_out'] = data['ndff_pow0_out']
-            self.data['ndff_pow1_in'] = data['ndff_pow1_in']
-            self.data['ndff_pow1_out'] = data['ndff_pow1_out']
+            # self.data['ndff_pow0_in'] = data['ndff_pow0_in']
+            # self.data['ndff_pow0_out'] = data['ndff_pow0_out']
+            # self.data['ndff_pow1_in'] = data['ndff_pow1_in']
+            # self.data['ndff_pow1_out'] = data['ndff_pow1_out']
             self.data['route'] = data['mode']
-            self.data['ndff_route'] = data['ndff_route']
+            # self.data['ndff_route'] = data['ndff_route']
             self.data['fibre_len'] = data['distance'] / 1e3
-            self.data['impairments'] = data['impairments']
-            self.data['impairments_snr'] = data['impairments_snr']
-            self.data['impairments_linewidth'] = data['impairments_linewidth']
+            self.data['wavelength'] = data['wavelength'] * 1e9
+            # self.data['impairments'] = data['impairments']
+            # self.data['impairments_snr'] = data['impairments_snr']
+            # self.data['impairments_linewidth'] = data['impairments_linewidth']
+            self.init = True
             # self.data['fb'] = float(np.round(data['fb'] * 1e-9, 1))
 
     def _send_config(self, name, val):
-        if self.sio.connected:
+        if self.sio.connected and self.init:
             self.sio.emit('config', {name: val})
 
     def _btn_connect(self, _):
@@ -133,15 +140,16 @@ class RemoteChannel(Channel):
             ('', self.btn_connect),
             ("Ping", make_label(bind=self.data.bind("ping", '-'))),
             ("Sampling Rate (GBaud)", make_float_input(1, 60, 1, bind=self.data.bind("fb", 60.0))),
-            ("Symbol Rate",  QLabel("90GHz")),
+            ("Symbol Rate",  QLabel("92GHz")),
             ("Power target (dBm)", make_float_input(-50, 20, 1, bind=self.data.bind("power", 0))),
             ("Input power", make_label(formatting="{:.2f}dBm", bind=self.data.bind("power_mon_in", -50))),
             ("Output power", make_label(formatting="{:.2f}dBm", bind=self.data.bind("power_mon_out", -50))),
             ("Impairments", make_checkbox(bind=self.data.bind("impairments", False))),
             ("Target SNR (dB)", make_float_input(-10, 50, 1, bind=self.data.bind("impairments_snr", 50))),
             ("Phase Noise (kHz)", make_float_input(1, 1e5, 10, bind=self.data.bind("impairments_linewidth", 0))),
-            ("Route", make_combo("B2B", "ULL", "NDFF", bind=self.data.bind("route", "B2B"))),
+            ("Route", make_combo("B2B", "ULL", "ULL2", "NDFF", bind=self.data.bind("route", "B2B"))),
             ("NDFF Window", make_button('Open', lambda _: self.ndff_window.show())),
+            ("Wavelength", make_label(formatting="{:.0f}nm", bind=self.data.bind("wavelength", np.nan))),
             ("Fibre length", make_label(formatting="{:.2f}km", bind=self.data.bind("fibre_len", 0))),
             ("SNR x/y (dB)", make_label(bind=self.data.bind("snr_est", '- / -'))),
         )
