@@ -35,7 +35,7 @@ class Simulation(QWidget):
         self._running = True
         self._const = const
         self.data = data
-        self.rng_key = 312
+        self.rng_key = jax.random.PRNGKey(312)
         self._paused = threading.Event()
         if not self.data['sim_running']:
             self._paused.clear()
@@ -81,7 +81,7 @@ class Simulation(QWidget):
 
     def _make_hist(self, rx):
         d, _, _ = jnp.histogram2d(
-            rx[:, 0], rx[:, 1], bins=self.HIST_BINS, range=np.array([
+            rx.real, rx.imag, bins=self.HIST_BINS, range=np.array([
                 [-self.HIST_LIM, self.HIST_LIM], [-self.HIST_LIM, self.HIST_LIM]
             ]))
         return d.T
@@ -90,16 +90,22 @@ class Simulation(QWidget):
         data = self.data.data.copy()
         const = self._const.copy()
 
-        rx, snr = data['channel'].propagate(const, self.rng_key, 1 << data['seq_length'])
-        tx, _ = data['channel'].get_tx(const, self.rng_key, 1 << data['seq_length'])
-        const = jax.device_put(data['optimiser'].update(const, rx, snr, tx[0]))
-        self._const = const.copy()
+        self.rng_key, key = jax.random.split(self.rng_key, num=2)
+        tx_idx, rx, snr = data['channel'].propagate(const, key, 1 << data['seq_length'])
+        # tx, _ = data['channel'].get_tx(const, self.rng_key, 1 << data['seq_length'])
 
-        const /= np.sqrt((abs(const)**2).mean() * 2)
-        rx /= np.sqrt((abs(rx) ** 2).mean() * 2)
-        hist = self._make_hist(rx)
+        const = jax.device_put(data['optimiser'].update(
+            const,
+            jnp.array([rx.flatten().real, rx.flatten().imag]).T,
+            snr.mean(),
+            tx_idx.flatten()
+        ))
+        rx /= np.sqrt((rx.real ** 2 + rx.imag ** 2).mean())
+        hist = jnp.stack([self._make_hist(rx[0]), self._make_hist(rx[1])])
+        self.signal.result.emit(self._const / jnp.sqrt((abs(self._const) ** 2).mean() * 2), hist)
+        self._const = const.copy()
+        # const /= np.sqrt((abs(const) ** 2).mean() * 2)
         self._paused.clear()
-        self.signal.result.emit(const, hist)
 
     def _loop(self):
         self._paused.wait()

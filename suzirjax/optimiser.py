@@ -96,7 +96,7 @@ class Optimiser:
 
     def make_gui(self) -> QWidget:
         return FLayout(
-            ("GMI", make_label(formatting='{:.5f}', bind=self.data.bind("gmi", -np.Inf))),
+            ("GMI", make_label(formatting='{:.5f}', bind=self.data.bind("gmi", np.nan))),
             *self._extra_gui_elements(),
             ("Allow decrease", make_checkbox(bind=self.data.bind("allow_decrease", True))),
             # ("GMI Method", make_combo_dict({
@@ -127,7 +127,9 @@ class Optimiser:
             return const
         if not self.data['allow_decrease'] and gmi < self.data.get('gmi'):
             return const
+
         self.data['gmi'] = gmi
+        self.parent_data['gmi_grad'] = np.zeros((const.shape[1], 2))
         self.parent_data['gmi'] = gmi
         return new_const
 
@@ -160,20 +162,20 @@ class GradientDescentOpt(Optimiser):
         nx = rx - jnp.take(const, tx_seq, axis=0)
         gmi, gmi_grad = jax.value_and_grad(self.gmi_log_sum)(const, nx, tx_seq, snr)
 
-        if jnp.any(jnp.isnan(gmi_grad)):
+        if jnp.any(jnp.isnan(gmi_grad)) or gmi < 0:
             self.parent_data['gmi_grad'] = gmi_grad
-            return const, gmi
+            return const, gmi if gmi > 0 else jnp.nan
 
             # gmi_grad = gmi_grad
 
-        if self.data['symmetry']:
-            inv = jnp.array([[1, 1], [1, -1], [-1, 1], [-1, -1]], dtype=float)
-            gmi_grad = gmi_grad[:gmi_grad.shape[0] // 4]
-            gmi_grad = inv[None, :, :] * gmi_grad[:, None, :]
-            gmi_grad = gmi_grad.transpose((1, 0, 2)).reshape(-1, 2)
-            const = const[:const.shape[0] // 4]
-            const = inv[None, :, :] * const[:, None, :]
-            const = const.transpose((1, 0, 2)).reshape(-1, 2)
+        # if self.data['symmetry']:
+        #     inv = jnp.array([[1, 1], [1, -1], [-1, 1], [-1, -1]], dtype=float)
+        #     gmi_grad = gmi_grad[:gmi_grad.shape[0] // 4]
+        #     gmi_grad = inv[None, :, :] * gmi_grad[:, None, :]
+        #     gmi_grad = gmi_grad.transpose((1, 0, 2)).reshape(-1, 2)
+        #     const = const[:const.shape[0] // 4]
+        #     const = inv[None, :, :] * const[:, None, :]
+        #     const = const.transpose((1, 0, 2)).reshape(-1, 2)
 
         self.parent_data['gmi_grad'] = gmi_grad
         const += 10 ** self.data['learning_rate'] * gmi_grad
@@ -211,13 +213,11 @@ class AdamOpt(Optimiser):
         # tx_bits = jnp.take(self.bmap, tx_seq, axis=0)
 
         gmi, gmi_grad = jax.value_and_grad(self.gmi_log_sum)(const, nx, tx_seq, snr)
-        self.parent_data['gmi_grad'] = gmi_grad
-
         # gmi, gmi_grad = jax.value_and_grad(self.gmi_max_log)(const, rx, tx_bits, snr)
-        if jnp.any(jnp.isnan(gmi_grad)):
-            return const, gmi
+        if jnp.any(jnp.isnan(gmi_grad)) or gmi < 0:
+            return const, gmi if gmi > 0 else jnp.nan
         # gmi_grad /= scaling
-
+        self.parent_data['gmi_grad'] = gmi_grad
         updates, self.opt_state = self.optimiser.update(-gmi_grad, self.opt_state, const)
         const = optax.apply_updates(const, updates)
 

@@ -1,17 +1,21 @@
 from __future__ import annotations
 
 import matplotlib
+import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
 
 from PyQt5.QtGui import *
+from PyQt5.QtCore import *
 from PyQt5.QtWidgets import *
 from PyQt5 import QtCore
 from typing import List, Tuple, TypeVar, Union, Any, Dict, Callable
 from inspect import signature
 
 __all__ = []
+
+from scipy.io import savemat
 
 
 def export(fn):
@@ -288,7 +292,7 @@ def make_checkbox(bind: ConnectorValue, name=None, on_value=True, off_value=Fals
 @export
 def make_label(bind: ConnectorValue, formatting='{}') -> QWidget:
     label = QLabel()
-    bind.on(lambda x: label.setText(formatting.format(x)))
+    bind.on(lambda x: label.setText(formatting.format(*(x if isinstance(x, tuple) else (x, )))))
     return label
 
 
@@ -353,6 +357,40 @@ class FigureCanvas(FigureCanvasQTAgg):
                 path += "." + file_format
             self.figure.savefig(path, format=file_format)
 
+    def copy_image(self):
+        cboard = QGuiApplication.clipboard()
+        output = QByteArray()
+        output_buffer = QBuffer(output)
+        output_buffer.open(QIODevice.WriteOnly)
+        self.figure.savefig(output_buffer, format='png')
+
+        image = QImage()
+        image.loadFromData(output)
+        cboard.setImage(image)
+
+    def save_data(self, **data):
+        options = QFileDialog.Options()
+        dialog = QFileDialog()
+        dialog.setAcceptMode(QFileDialog.AcceptSave)
+        dialog.setOptions(options)
+        file_list = [
+            'CSV File (*.csv)',
+            'Numpy archive (*.npz)',
+            'Matlab mat (*.mat)',
+        ]
+        dialog.setNameFilters(file_list)
+        if dialog.exec_() == QDialog.Accepted:
+            path = dialog.selectedFiles()[0]  # returns a list
+            filter_name = dialog.selectedNameFilter()
+            file_format = filter_name[-5:-1]
+            if not path.lower().endswith(file_format):
+                path += file_format
+            if filter_name == file_list[1]:
+                np.savez_compressed(path, **data)
+            elif filter_name == file_list[2]:
+                savemat(path, data)
+            else:
+                np.savetxt(path, delimiter=',')
 
 @export
 def make_content_menu(*actions, parent=None) -> QMenu:

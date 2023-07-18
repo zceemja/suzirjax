@@ -72,7 +72,8 @@ class ApplicationWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle('Suzirjax')
         self.setWindowIcon(QIcon(LOGO))
-        self.setCentralWidget(ApplicationWidget(self))
+        self.widget = ApplicationWidget(self)
+        self.setCentralWidget(self.widget)
         self.statusbar = self.statusBar()
         self.statusbar.showMessage("Device: " + jax.devices()[0].device_kind)
 

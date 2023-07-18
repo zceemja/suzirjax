@@ -5,10 +5,9 @@ import jax
 from suzirjax.gui_helpers import *
 
 from qampy import signals, impairments, equalisation, phaserec, helpers, analog_frontend
-from qampy.signals import SignalQAMGrayCoded
+from qampy.signals import SignalQAMGrayCoded, SignalBase
 
-from typing import Tuple
-from .channel import Channel
+from .channel import Channel, ch_out
 from PyQt5.QtWidgets import QWidget
 from jax import numpy as jnp
 import numpy as np
@@ -67,8 +66,8 @@ class ChalmersQAMpy(Channel):
         self.wx = None
 
     def make_gui(self) -> QWidget:
-        return FLayout(
-            ("Sample Rate (GHz)", make_float_input(1, 300, 1, bind=self.data.bind("fb", 25))),
+        layout = FLayout(
+            ("Symbol Rate (GBaud)", make_float_input(1, 300, 1, bind=self.data.bind("fb", 25))),
             ("Linewidth (kHz)", make_float_input(1, 1e6, 1, bind=self.data.bind("linewidth", 100))),
             ("Noise (dB)", make_float_input(-10, 40, 1, bind=self.data.bind("noise", 15))),
             ("Sync taps", make_int_input(1, 300, 1, bind=self.data.bind("ntaps", 17))),
@@ -76,9 +75,17 @@ class ChalmersQAMpy(Channel):
             ("Frame Synced", make_label(bind=self.data.bind("synced", False))),
             ("SNR (dB)", make_label(bind=self.data.bind("snr", '- / -'))),
         )
+        self.data.on('fb', lambda fb: self.parent.data.set('throughput_factor', fb * 1e9 * 2))
+        return layout
 
-    def propagate(self, const: jnp.ndarray, rng_key: int, seq_len: int) -> Tuple[jnp.ndarray, float]:
-        tx = self.get_tx(const, rng_key, seq_len)[1]
+    def impairments(self, sig):
+        sig = impairments.apply_phase_noise(sig, self.data['linewidth'] * 1e3)
+        sig = impairments.change_snr(sig, self.data['noise'])
+        sig = impairments.rotate_field(sig, np.pi / 0.1)
+        return sig
+
+    def propagate(self, const: jnp.ndarray, rng_key: int, seq_len: int) -> ch_out:
+        tx_idx, tx = self.get_tx(const, rng_key, seq_len)
 
         pilot_seq_len = 2 ** 12
         pilot_ins_rat = 5
@@ -108,12 +115,9 @@ class ChalmersQAMpy(Channel):
             if failed > 100:
                 return tx, 0
             failed += 1
-            sig2 = impairments.apply_phase_noise(sig, self.data['linewidth'] * 1e3)
-            sig2 = impairments.change_snr(sig2, self.data['noise'])
-            sig2 = impairments.rotate_field(sig2, np.pi / 0.1)
-
-            sig2 = analog_frontend.orthonormalize_signal(sig2)
+            sig2 = self.impairments(sig)
             sig2 = helpers.normalise_and_center(sig2)
+            sig2 = analog_frontend.orthonormalize_signal(sig2)
             synced = sig2.sync2frame()
 
         if failed > 0:
@@ -121,20 +125,18 @@ class ChalmersQAMpy(Channel):
         self.data['synced'] = synced
         sig2 = helpers.normalise_and_center(sig2)
         sig2 = analog_frontend.orthonormalize_signal(sig2)
-        self.wx, s1 = equalisation.pilot_equaliser(
-            sig2, (50e-6, 40e-5), self.data['ntaps'], apply=True, wxinit=self.wx, methods=("mcma", "mddma"),
+        _, s1 = equalisation.pilot_equaliser(
+            sig2, (50e-6, 40e-5), self.data['ntaps'], apply=True, wxinit=None, methods=("mcma", "mddma"),
             adaptive_stepsize=True, foe_comp=False
         )
-        s1 = analog_frontend.orthonormalize_signal(s1)
+        s1: SignalBase = analog_frontend.orthonormalize_signal(s1)
         s1, ph = phaserec.pilot_cpe(s1, nframes=1)
         # data = s1.get_data()
         rx = s1.get_data()
+        s1
         snr = 10 * jnp.log10(
                     jnp.sum(jnp.abs(tx) ** 2, axis=-1) /
                     jnp.sum(jnp.abs(rx - tx) ** 2, axis=-1)
         )
         self.data['snr'] = f'{snr[0]:.2f} / {snr[1]:.2f}'
-
-        rx1 = rx[0] * scale
-        res = jnp.array([rx1.real, rx1.imag]).T
-        return res, snr[0]
+        return tx_idx, rx * scale, snr

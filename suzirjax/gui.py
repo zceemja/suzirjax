@@ -30,6 +30,7 @@ class ApplicationWidget(QFrame):
         self.data.set('channel_type', "AWGN")
         self.data.set('mod_points', 32)
         self.data.set('mod_name', "Random")
+        self.data.set('throughput_factor', 1)
 
         self.ssfm_data = Connector()
 
@@ -91,7 +92,8 @@ class ApplicationWidget(QFrame):
         self.shortcuts[1].activated.connect(self.sim.pause)
 
         layout.addWidget(HLayout(
-            self.control_widget, self.const_canvas, parent=self
+            self.control_widget, self.const_canvas,
+            parent=self
         ))
         # layout.addWidget(self.progress)
         if isinstance(parent, QMainWindow):
