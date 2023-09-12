@@ -1,3 +1,11 @@
+"""
+This file contains bunch of helper classes + functions for GUI,
+including "Connector" that synchronises variables by calling
+callback functions once variable is updated.
+
+Author: zceemja
+"""
+
 from __future__ import annotations
 
 import matplotlib
@@ -25,17 +33,25 @@ def export(fn):
 
 @export
 class ConnectorValue:
-    def __init__(self, connector, name):
+    def __init__(self, connector, name, out_transform=None, in_transform=None):
         self.connector = connector
         self.name = name
+        self.in_transform = in_transform if callable(in_transform) else None
+        self.out_transform = out_transform if callable(out_transform) else None
 
     def set(self, value):
+        if self.in_transform is not None:
+            value = self.in_transform(value)
         self.connector[self.name] = value
 
     def get(self):
+        if self.out_transform is not None:
+            return self.out_transform(self.connector[self.name])
         return self.connector[self.name]
 
     def on(self, callback, now=True):
+        # if self.out_transform is not None:
+        #     callback = lambda x: self.out_transform(callback(x))
         self.connector.on(self.name, callback, now=now)
 
     def __delitem__(self, key):
@@ -81,11 +97,11 @@ class Connector:
             return self.data[name]
         return default
 
-    def bind(self, name, default=None) -> ConnectorValue:
+    def bind(self, name, default=None, out_t=None, in_t=None) -> ConnectorValue:
         """ return single connector value """
         if default is not None:
             self.set(name, default)
-        return ConnectorValue(self, name)
+        return ConnectorValue(self, name, out_transform=out_t, in_transform=in_t)
 
     def on(self, name, callback, default=None, now=True, call_on_none=True) -> 'Connector':
         """ callback on value change, now to execute immediately once """

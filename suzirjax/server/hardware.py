@@ -2,8 +2,8 @@ import time
 
 from aiohttp import web
 import socketio
-from channels import ChalmersQAMpy
-from channels.remote import bytes_to_array, array_to_bytes
+from suzirjax.channels import ChalmersQAMpy
+from suzirjax.channels.remote import bytes_to_array, array_to_bytes
 
 sio = socketio.AsyncServer(async_mode='aiohttp')
 app = web.Application()

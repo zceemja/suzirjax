@@ -1,13 +1,15 @@
-from .channel import Channel, ch_out
-from suzirjax.gui_helpers import *
+from .channel import Channel, ch_out, register_channel
+from suzirjax.gui import *
 from PyQt5.QtWidgets import QWidget
 
 import jax
 from jax import numpy as jnp
 import time
-from typing import Tuple
+
+from ..modulation import Modulation
 
 
+@register_channel
 class AWGNChannel(Channel):
     NAME = 'AWGN'
 
@@ -30,20 +32,22 @@ class AWGNChannel(Channel):
         self.data.on('fb', lambda fb: self.parent.data.set('throughput_factor', fb * 1e9 * 2))
         return layout
 
-    def propagate(self, const: jnp.ndarray, rng_key: int, seq_len: int) -> ch_out:
+    def propagate(self, const: Modulation, rng_key: int, seq_len: int) -> ch_out:
         self.key, key = jax.random.split(self.key)
         tx_idx, tx = self.get_tx(const, rng_key, seq_len)
 
-        noise = jnp.sqrt(jnp.mean(jnp.abs(const) ** 2)) * jax.random.normal(key, tx.shape, dtype=complex) * self.sigma
-        rx = tx + noise  # * (2 ** -.5)
+        p = jnp.sqrt(jnp.mean(jnp.abs(const.complex) ** 2) * tx.shape[0])
+        noise = p * jax.random.normal(key, tx.shape, dtype=complex) * self.sigma
+        rx = tx + noise
         snr = 10 * jnp.log10(
                     jnp.sum(jnp.abs(tx) ** 2, axis=-1) /
                     jnp.sum(jnp.abs(rx - tx) ** 2, axis=-1)
         )
-        self.data['snr'] = snr[0], snr[1]
+        self.data['snr'] = snr[0], snr[-1]
         return tx_idx, rx, snr
 
 
+@register_channel
 class PCAWGNChannel(Channel):
     """
     Partially Coherent Additive White Gaussian Noise
@@ -79,17 +83,17 @@ class PCAWGNChannel(Channel):
         self.data.on('fs', lambda fs: self.parent.data.set('throughput_factor', fs * 1e9))  # assume 2 samples per symbol
         return layout
 
-    def propagate(self, const: jnp.ndarray, rng_key: int, seq_len: int) -> ch_out:
+    def propagate(self, const: Modulation, rng_key: int, seq_len: int) -> ch_out:
         self.key, key1, key2 = jax.random.split(self.key, num=3)
         tx_idx, tx = self.get_tx(const, rng_key, seq_len)
-        noise = jnp.sqrt(jnp.mean(jnp.abs(const) ** 2)) * jax.random.normal(key1, shape=tx[0].shape, dtype=tx.dtype) * self.sigma * (2 ** -.5)
+        noise = jnp.sqrt(jnp.mean(jnp.abs(const.complex) ** 2)) * jax.random.normal(key1, shape=tx[0].shape, dtype=tx.dtype) * self.sigma * (2 ** -.5)
         # phase = jnp.cumsum(, axis=-1)
         phase = jnp.exp(1j * jax.random.normal(key2, shape=tx[0].shape) * self.std)
         rx = tx[0] * phase + noise
-        snr = (
+        snr = 10 * jnp.log10(
                     jnp.sum(jnp.abs(tx[0]) ** 2, axis=-1) /
                     jnp.sum(jnp.abs(rx - tx[0]) ** 2, axis=-1)
             )
-        self.data['snr'] = 10 * jnp.log10(snr)
+        self.data['snr'] = snr
         rx = jnp.array([rx.real, rx.imag]).T
-        return tx_idx[0], self.data['snr']
+        return tx_idx, rx, snr

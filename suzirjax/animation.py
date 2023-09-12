@@ -11,7 +11,7 @@ from rich.progress import Progress
 from rich import print
 
 from suzirjax.channels import Channel, AWGNChannel, PCAWGNChannel, ChalmersQAMpy
-from suzirjax.gui_helpers import Connector
+from suzirjax.gui import Connector
 from suzirjax.modulation import get_modulation
 from suzirjax.optimiser import Optimiser, AdamOpt, GradientDescentOpt, RMSPropOpt, YogiOpt
 from suzirjax.utils import register_cmaps

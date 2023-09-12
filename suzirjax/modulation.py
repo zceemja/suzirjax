@@ -1,11 +1,79 @@
+import os.path
+from typing import Any, Union
+
+import jax
 import numpy as np
 import re
 from jax import numpy as jnp
+from jax.tree_util import register_pytree_node
+from numpy import ndarray
+from scipy.io import loadmat
+
 from suzirjax import utils
 
 __MOD = {}
 
 MODULATIONS = ["ASK", "PAM", "PSK", "QAM", "APSK"]
+
+
+class Modulation:
+    """ Modulation format, always with uniform power """
+    def __init__(self, array, modes=2):
+        self.format: jnp.ndarray = jnp.array(array)
+        if self.format.ndim == 1:
+            self.format = self.format[None, :]
+        if self.format.shape[0] == 1 and modes > 1:
+            self.format = jnp.tile(self.format, (modes, 1))
+        self.format /= jnp.sqrt(jnp.mean(jnp.abs(self.format) ** 2 / (self.dim / 2), axis=1))[:, None]
+
+    @property
+    def complex(self):
+        """ Return in complex format of [[modes...], [points...]]"""
+        return self.format
+
+    @property
+    def real(self):
+        """ Return real values in format of [[modes...], [points...]]"""
+        return self.format.real
+
+    @property
+    def imag(self):
+        """ Return imaginary values in format of [[modes...], [points...]]"""
+        return self.format.imag
+
+    @property
+    def regular(self):
+        """ Return in real-value format of [[points...], [mode 0 real, mode 0 imag, mode 1 real ...]]"""
+        return jnp.array([self.format.real, self.format.imag]).transpose((2, 1, 0)).reshape(self.points, self.dim)
+
+    @property
+    def points(self):
+        """ Constellation cardinality """
+        return self.format.shape[1]
+
+    @property
+    def modes(self):
+        """ Number of modes (polarisations) """
+        return self.format.shape[0]
+
+    @property
+    def dim(self):
+        """ Constellation dimension """
+        return self.format.shape[0] * 2
+
+    def copy(self) -> 'Modulation':
+        return Modulation(self.format.copy())
+
+    @classmethod
+    def special_flatten(cls, v):
+        return v.format, None
+
+    @classmethod
+    def special_unflatten(cls, aux_data, children):
+        return Modulation(children)
+
+
+register_pytree_node(Modulation, Modulation.special_flatten, Modulation.special_unflatten)
 
 
 def graycode(o):
@@ -86,9 +154,9 @@ def make_pam(order: int):
     return c[graycode(order)]
 
 
-def get_modulation(name: str, unit_power=True) -> np.ndarray:
+def get_modulation(name: str, unit_power=True) -> Modulation:
     """
-    Returns modulation alphabet
+    Returns modulation format
     """
     name = name.upper()
     redix = re.compile(r'(\d+)-?([A-Z]{3,4})')
@@ -113,7 +181,34 @@ def get_modulation(name: str, unit_power=True) -> np.ndarray:
         c = c[0, :] + 1j * c[1, :]
     else:
         raise ValueError(f"Unknown modulation name '{name}'")
-    c += np.random.uniform(-1., 1., points) * 1e-9 + 1j * np.random.uniform(-1., 1., points) * 1e-9  # break symmetry
-    if unit_power:
-        c /= jnp.sqrt(jnp.mean(jnp.abs(c)**2))
-    return c
+    # c += np.random.uniform(-1., 1., points) * 1e-9 + 1j * np.random.uniform(-1., 1., points) * 1e-9  # break symmetry
+    return Modulation(c)
+
+
+def load_from_file(file_name) -> Union[Modulation, None]:
+    if not os.path.exists(file_name):
+        return None
+    if file_name.lower().endswith('.npz'):
+        data = np.load(file_name)
+    elif file_name.lower().endswith('.mat'):
+        data = loadmat(file_name)
+    else:
+        return None
+    for key in data.keys():
+        array = data[key]
+        if not isinstance(array, np.ndarray):
+            continue
+        if array.dtype.kind == 'f' and array.ndim == 2:
+            if array.shape[0] != 2:
+                array = array.T
+            if array.shape[0] != 2:
+                continue
+            array = np.array([array[0] + array[1] * 1j])
+        elif array.dtype.kind == 'c':
+            pass
+        else:
+            continue
+        if array.shape[0] & (array.shape[0] - 1) != 0:  # if not power of 2
+            continue
+        return Modulation(array)
+    return None

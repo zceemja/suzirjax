@@ -1,7 +1,10 @@
-from PyQt5 import QtCore
+"""
+Window that shows NDFF (National Dark Fibre Facility, https://www.ndff.ac.uk/)
+map with optical power at each point, and allowing reconfiguration optical path.
+"""
 
 from suzirjax import utils
-from suzirjax.gui_helpers import *
+from suzirjax.gui.helpers import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 

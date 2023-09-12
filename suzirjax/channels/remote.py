@@ -2,20 +2,19 @@ import os
 import queue
 import time
 
-import jax
-import numpy as np
 import socketio
 
-from suzirjax.gui_helpers import *
+from suzirjax.gui import *
 from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import *
-from .channel import Channel
+from .channel import Channel, register_channel
 from jax import numpy as jnp
 from typing import Tuple
 
-from ..gui_ndff import NDFFWindow
+from suzirjax.gui.ndff import NDFFWindow
 
 
+@register_channel
 class RemoteChannel(Channel):
 
     NAME = 'Remote'

@@ -1,49 +1,59 @@
+"""
+Main GUI application container that glues everything together
+"""
+
+
 import sys
 
 import jax
 
-from suzirjax.gui_gmi import GMIHistoryWindow
-from suzirjax.gui_const import ConstellationCanvas
-from suzirjax.gui_helpers import *
+from suzirjax.gui.history import HistoryPlotWindow
+from suzirjax.gui.constellation import ConstellationCanvas
+from suzirjax.gui.helpers import *
 from suzirjax.channels import CHANNELS
-from suzirjax.modulation import MODULATIONS, get_modulation, relabel
+from suzirjax.metric import METRIC_METHODS
+from suzirjax.modulation import MODULATIONS, get_modulation, load_from_file
 from suzirjax.optimiser import OPTIMISERS
 from suzirjax.simulation import Simulation
 from suzirjax.utils import register_cmaps
 
 from PyQt5.QtCore import QT_VERSION_STR
-from PyQt5.QtWidgets import *
-from PyQt5.QtGui import *
+
 import matplotlib
 import numpy as np
-from jax import numpy as jnp
 
+# TODO: maybe move somewhere more reasonable
 matplotlib.use('Qt5Agg')
 register_cmaps()
 
 
 class ApplicationWidget(QFrame):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, const_name=None):
         super().__init__(parent)
         self.data = Connector()
         self.data.set('sim_running', False)  # Play/pause simulation
         self.data.set('channel_type', "AWGN")
-        self.data.set('mod_points', 32)
-        self.data.set('mod_name', "Random")
         self.data.set('throughput_factor', 1)
 
+        init_const = load_from_file(const_name)
+        if init_const is None:
+            init_const = get_modulation("RAND")
+            self.data.set('mod_name', "Random")
+        else:
+            self.data.set('mod_name', "Custom")
+        self.data.set('mod_points', init_const.points)
         self.ssfm_data = Connector()
 
         layout = QVBoxLayout()
         self.setLayout(layout)
         self.channels = {ch.NAME: ch(self) for ch in CHANNELS}
         self.optimisers = {opt.NAME: opt(self.data) for opt in OPTIMISERS}
+        self.metrics = {mms.label: mms(self.data) for mms in METRIC_METHODS}
 
         self.quitting = False
-        self.const_canvas = ConstellationCanvas(self.data)
+        self.const_canvas = ConstellationCanvas(self.data, init_const)
 
         ## Simulation
-        init_const = np.random.rand(32, 2) * 2 - 1
         self.sim = Simulation(self.data, init_const, parent=self)
 
         self.sim.signal.result.connect(self.const_canvas.update_data)
@@ -54,7 +64,6 @@ class ApplicationWidget(QFrame):
         self.sim_btn = make_button("", lambda _: self.sim.toggle_pause(), self)
         self.data.on('sim_running', lambda r: self.sim_btn.setText('Stop' if r else 'Start'))
         self.data.on('channel', lambda _, c: c.terminate(), now=False, call_on_none=False)
-        self.gmi_hist = GMIHistoryWindow(self.data, self)
         self.data['show_rx'] = True
 
         self.control_widget = VLayout(
@@ -62,9 +71,11 @@ class ApplicationWidget(QFrame):
                 ("Seq. Length (2^n)", make_int_input(11, 17, bind=self.data.bind("seq_length", 11))),
                 ("Channel", make_combo_dict(
                     self.channels, bind=self.data.bind("channel", self.channels[CHANNELS[0].NAME]))),
+                ("Metric", make_combo_dict(
+                    self.metrics, bind=self.data.bind("metric_method", self.metrics[METRIC_METHODS[0].label]))),
                 ("Optimiser", make_combo_dict(
                     self.optimisers, bind=self.data.bind("optimiser", self.optimisers[OPTIMISERS[0].NAME]))),
-                ("GMI History", make_button('Show', lambda _: self.gmi_hist.show())),
+                ("History", make_button('Show Plot', lambda _: self.hist_plot.show())),
                 # ("", make_button('Relabel', self._relabel)),
             ),
             *[
@@ -80,6 +91,8 @@ class ApplicationWidget(QFrame):
             self.sim_btn,
             parent=self
         )
+
+        self.hist_plot = HistoryPlotWindow(self.data, self)
         self.control_widget.setMaximumWidth(250)
         self.data.on("channel", lambda ch: ch.initialise())
         QApplication.instance().aboutToQuit.connect(self.before_quit)
@@ -99,8 +112,9 @@ class ApplicationWidget(QFrame):
         if isinstance(parent, QMainWindow):
             parent.setMenuBar(make_menubar({
                 "&File": [
+                    ("&Load Constellation", self.load_const),
                     ("Save &Constellation", self.const_canvas.save),
-                    ("Save &GMI History", self.gmi_hist.canvas.save),
+                    ("Save &History", self.hist_plot.canvas.save),
                     ("&Exit", QApplication.instance().quit),
                 ],
                 "&Help": [
@@ -115,6 +129,21 @@ class ApplicationWidget(QFrame):
     #     const /= np.sqrt((abs(const) ** 2).mean() * 2)
     #     self.sim.set_const(const)
     #     self.const_canvas.update_data(const, None)
+
+    def load_const(self):
+        options = QFileDialog.Options()
+        file_name, _ = QFileDialog.getOpenFileName(
+            self, "Load Constellation", "", "Data Array (*.npz *.mat)", options=options)
+        if not file_name:
+            return
+        a = load_from_file(file_name)
+        if a is None:
+            return
+        self.sim.const = a.T
+        self.const_canvas.update_data(self.sim.const, None)
+        self.data['mod_name'] = "Custom"
+        self.data['mod_points'] = a.shape[1]
+
 
     def _progress_stop(self):
         self.progress_timer.stop()
@@ -143,6 +172,7 @@ class ApplicationWidget(QFrame):
     def about_dialog(self, _):
         make_dialog("About", VLayout(
             "Suzirjax",
+            "Author: Mindaugas Jarmolovičius (zceemja@ucl.ac.uk)",
             "Python: " + sys.version.split('\n')[0],
             "JAX: " + jax.__version__,
             "QT: " + QT_VERSION_STR,
@@ -163,32 +193,11 @@ class ApplicationWidget(QFrame):
         ), parent=self)
         if dlg.exec():
             if dlgc['mod_name'] == 'Random':
-                a = np.random.rand(dlgc['mod_points'], 2) * 2 - 1
-                self.sim.set_const(a)
+                self.sim.const = np.random.rand(dlgc['mod_points'], 2) * 2 - 1
             else:
                 a = get_modulation(str(dlgc['mod_points']) + dlgc['mod_name'])
-                a = np.array([a.real, a.imag])
-                self.sim.set_const(a.T)
+                self.sim.const = np.array([a.real, a.imag]).T
             self.data['mod_name'] = dlgc['mod_name']
             self.data['mod_points'] = dlgc['mod_points']
             self.const_canvas.update_data(self.sim.const, None)
 
-
-if __name__ == '__main__':
-    class ApplicationWindow(QMainWindow):
-        def __init__(self):
-            super().__init__()
-            self.setWindowTitle('Suzirjax')
-            self.setCentralWidget(ApplicationWidget(self))
-            self.setWindowTitle("Device: " + jax.devices()[0].device_kind)
-
-            centre_point = QDesktopWidget().availableGeometry().center()
-            geom = self.frameGeometry()
-            geom.moveCenter(centre_point)
-            self.move(geom.topLeft())
-
-
-    app = QApplication(sys.argv)
-    window = ApplicationWindow()
-    window.show()
-    app.exec()

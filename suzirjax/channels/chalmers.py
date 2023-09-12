@@ -1,13 +1,12 @@
 
 import warnings
 
-import jax
-from suzirjax.gui_helpers import *
+from suzirjax.gui import *
 
 from qampy import signals, impairments, equalisation, phaserec, helpers, analog_frontend
 from qampy.signals import SignalQAMGrayCoded, SignalBase
 
-from .channel import Channel, ch_out
+from .channel import Channel, ch_out, register_channel
 from PyQt5.QtWidgets import QWidget
 from jax import numpy as jnp
 import numpy as np
@@ -58,6 +57,7 @@ class ArbritarySignal(SignalQAMGrayCoded):
         return obj
 
 
+@register_channel
 class ChalmersQAMpy(Channel):
     NAME = 'QAMpy'
 
@@ -131,6 +131,7 @@ class ChalmersQAMpy(Channel):
         )
         s1: SignalBase = analog_frontend.orthonormalize_signal(s1)
         s1, ph = phaserec.pilot_cpe(s1, nframes=1)
+        s1.cal_mi()
         # data = s1.get_data()
         rx = s1.get_data()
         s1

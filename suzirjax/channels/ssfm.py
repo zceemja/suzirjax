@@ -1,7 +1,6 @@
 
 import jax
 import time
-import numpy as np
 from jax import numpy as jnp
 from qampy import impairments
 from functools import partial
@@ -10,10 +9,10 @@ from qampy.core.impairments import quantize_signal
 from qampy.signals import SignalBase
 from scipy.constants import pi, c, h
 
-from suzirjax.channels import ChalmersQAMpy, Channel
-from suzirjax.gui_helpers import *
+from suzirjax.channels import ChalmersQAMpy
+from suzirjax.channels.channel import register_channel
+from suzirjax.gui import *
 from PyQt5.QtWidgets import *
-from typing import Tuple
 
 
 @partial(jax.jit, static_argnums=[1, 2, 3, 4, 5, 6, 7, 8])
@@ -70,6 +69,8 @@ def amplifier(sig, gain, nf, fs, wavelength, key):
     sig += noise
     return sig
 
+
+@register_channel
 class NonLinearChannel(ChalmersQAMpy):
     NAME = 'Non-Linear'
 
@@ -131,8 +132,6 @@ class NonLinearChannel(ChalmersQAMpy):
         self.data.on('amp_gain', lambda val: setattr(self, 'amp_gain', 10 ** (val / 10)))
         self.data.on('amp_nf', lambda val: setattr(self, 'amp_nf', 10 ** (val / 10)))
         self.data.on('fb', lambda fb: self.parent.data.set('throughput_factor', fb * 1e9 * 2))
-        gain = 10 ** (self.data['amp_gain'] / 10)
-        nf = 10 ** (self.data['amp_nf'] / 10)
         return layout
 
     def impairments(self, sig: SignalBase):
@@ -147,7 +146,7 @@ class NonLinearChannel(ChalmersQAMpy):
         self.data['power_2'] = 10 * np.log10((abs(sig_) ** 2).mean() * m) + 30
 
         # ASE noise from amplifier
-        sig_ = amplifier(sig, self.amp_gain, self.amp_nf, self.fs, self.wavelength, key)
+        # sig_ = amplifier(sig, self.amp_gain, self.amp_nf, self.fs, self.wavelength, key)
         self.data['power_rx'] = 10 * np.log10((abs(sig_) ** 2).mean() * m) + 30
 
         sig_ = dispersion_comp(
@@ -158,21 +157,3 @@ class NonLinearChannel(ChalmersQAMpy):
         sig = sig.recreate_from_np_array(quantize_signal(sig, nbits=self.data['dac_res']))
         sig = impairments.change_snr(sig, self.data['rx_noise'])
         return sig
-
-    # def propagate(self, const: jnp.ndarray, rng_key: int, seq_len: int) -> Tuple[jnp.ndarray, float]:
-    #     self.key, key1, key2 = jax.random.split(self.key, num=3)
-    #     tx = self.get_tx(const, key1, seq_len)[1]
-    #     rx = tx + jnp.sqrt(jnp.mean(jnp.abs(const) ** 2)) * jax.random.normal(key1, shape=tx.shape, dtype=tx.dtype) * self.sigma * (2 ** -.5)
-    #     # phase = jnp.exp(1j * jax.random.normal(key2, shape=tx.shape) * self.std)
-    #     rx = split_step_fourier_method(
-    #         rx, self.fs, self.power, self.distance, self.step_size, self.dispersion, self.wavelength, self.alpha, self.gamma)
-    #     rx = dispersion_comp(
-    #         rx, self.fs, self.distance, self.dispersion, self.wavelength
-    #     )
-    #     self.data['power_rx'] = 10 * np.log10((jnp.abs(rx) ** 2).mean() * rx.shape[0]) + 30
-    #     snr = 10 * jnp.log10(
-    #                 jnp.sum(jnp.abs(tx) ** 2, axis=-1) /
-    #                 jnp.sum(jnp.abs(rx - tx) ** 2, axis=-1)
-    #     )
-    #     self.data['snr'] = f'{snr[0]:.2f} / {snr[1]:.2f}'
-    #     return jnp.array([rx[0].real, rx[0].imag]).T, snr[0]

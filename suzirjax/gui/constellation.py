@@ -1,14 +1,16 @@
+"""
+Canvas component that displays received constellation points
+"""
+
 import itertools
 
-import numpy as np
 import matplotlib.axes
-from scipy.io import savemat
 
-from suzirjax.gui_helpers import *
+from suzirjax.gui.helpers import *
+from suzirjax.modulation import Modulation
 from suzirjax.simulation import Simulation
 
-from PyQt5.QtWidgets import *
-from PyQt5.QtGui import *
+from PyQt5.QtCore import QTimer
 
 
 class ConstellationCanvas(FigureCanvas):
@@ -18,10 +20,11 @@ class ConstellationCanvas(FigureCanvas):
     POLS = 2
     POL_NAMES = 'X', 'Y'
 
-    def __init__(self, data: Connector):
+    def __init__(self, data: Connector, const: Modulation):
         super().__init__()
         self.data = data
         self.ax: List[matplotlib.axes.Axes] = self.figure.subplots(ncols=self.POLS)
+        self.init_render = False
 
         for p in range(self.POLS):
             self.ax[p].set_title(self.POL_NAMES[p], color='white')
@@ -35,57 +38,85 @@ class ConstellationCanvas(FigureCanvas):
 
             for spine in self.ax[p].spines.values():
                 spine.set_color('white')
-
         self.figure.patch.set_facecolor('black')
-
-        self.h_plt = None
-        self.c_plt = None
-        self.v_plt = None
-
-        self.bg = None
-        self.last_const = None
-
-        self.const_text = [], []
 
         add_right_clk_menu(
             self,
-            # make_checkable_action("Show received", self.data.bind("show_rx", True), self),
             make_checkable_action("Show constellation", self.data.bind("show_c", True), self),
             make_checkable_action("Show bitmap", self.data.bind("show_bmap", False), self),
             make_checkable_action("Show vectors", self.data.bind("show_vec", True), self),
-            # ("Show received", lambda: self.data.set("show_rx", not self.data["show_rx"])),
-            # ("Show constellation", lambda: self.data.set("show_c", not self.data["show_c"])),
-            # ("Show bitmap", lambda: self.data.set("show_bmap", not self.data["show_bmap"])),
             None,
             ("Save figure", self.save),
             ("Copy figure", self.copy_image),
-            ("Save data", lambda: self.save_data(const=self.last_const)),
+            ("Save data", lambda: self.save_data(const=self.last_const.complex)),
             parent=self,
         )
 
+        self.h_plt = None
+        self.v_plt = None
+
+        self.last_const: Modulation = const.copy()
+        self.c_plt = [
+            self.ax[p].plot(const.real[p], const.imag[p], '.', c='magenta', animated=True)[0]
+            for p in range(self.POLS)
+        ]
+        for p in range(self.POLS):
+            self.c_plt[p].set_visible(self.data['show_c'])
+            self.data.on('show_c', lambda x: (self.c_plt[p].set_visible(x), self._redraw()), now=False)
+
+        self.const_text = [], []
+        self._update_points()
+        for text in self._const_texts:
+            text.set_visible(self.data['show_bmap'])
+        self.data.on('show_bmap', lambda x: ([t.set_visible(x) for t in self._const_texts], self._redraw()), now=False)
+        self.bg = None
+
+        self.init_timer = QTimer(self)
+        self.init_timer.timeout.connect(self._initial_draw)
+        self.init_timer.start(800)  # Let's home its enough time
+
+    def _initial_draw(self):
+        # self.bg = self.figure.canvas.copy_from_bbox(self.figure.bbox)
+        for p in range(self.POLS):
+            self.ax[p].draw_artist(self.c_plt[p])
+        self.figure.canvas.blit(self.figure.bbox)
+        self.figure.canvas.flush_events()
+        self.init_timer.stop()
+        self.init_render = True
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        # self._redraw()
+
     def _redraw(self):
+        if not self.init_render:
+            return
+        # self.figure.canvas.restore_region(self.bg)
+        if self.data['show_c']:
+            for p in range(self.POLS):
+                self.ax[p].draw_artist(self.c_plt[p])
+
         if self.h_plt is not None and self.data['show_rx']:
             for p in range(self.POLS):
                 self.ax[p].draw_artist(self.h_plt[p])
-        if self.c_plt is not None and self.data['show_c']:
-            for p in range(self.POLS):
-                self.ax[p].draw_artist(self.c_plt[p])
+
         if self.data['show_bmap']:
             for p in range(self.POLS):
                 for text in self.const_text[p]:
                     self.ax[p].draw_artist(text)
+
         if self.v_plt is not None and self.data['show_vec']:
             for p in range(self.POLS):
                 self.ax[p].draw_artist(self.v_plt[p])
         self.figure.canvas.blit(self.figure.bbox)
         self.figure.canvas.flush_events()
 
-    def _init_quiver(self, const, gmi_grad):
-        if gmi_grad is None or gmi_grad.shape[0] != const.shape[1]:
-            gmi_grad = np.zeros((const.shape[1], 2))
+    def _init_quiver(self, const: Modulation, gmi_grad):
+        if gmi_grad is None or gmi_grad.shape[0] != const.points:
+            gmi_grad = np.zeros((const.points, 2))
         # gmi_grad /= gmi_grad.max()
         self.v_plt = [
-            self.ax[p].quiver(const[p].real, const[p].imag, gmi_grad[:, 0], gmi_grad[:, 1],
+            self.ax[p].quiver(const.real[p], const.imag[p], gmi_grad[:, 0], gmi_grad[:, 1],
                               color='aqua', width=0.003, animated=True)
             for p in range(self.POLS)
         ]
@@ -95,7 +126,7 @@ class ConstellationCanvas(FigureCanvas):
         return itertools.chain(*self.const_text)
 
     def _update_points(self):
-        m = self.last_const.shape[1]
+        m = self.last_const.points
         format_str = f'{{0:0{int(np.log2(m))}b}}'
         self.bit_text = [format_str.format(i) for i in range(m)]
         for text in self._const_texts:
@@ -104,30 +135,27 @@ class ConstellationCanvas(FigureCanvas):
         for i, text in enumerate(self.bit_text):
             for p in range(self.POLS):
                 self.const_text[p].append(self.ax[p].text(
-                    self.last_const[p, i].real + self.TEXT_OFFSET,
-                    self.last_const[p, i].imag + self.TEXT_OFFSET,
+                    self.last_const.real[p, i] + self.TEXT_OFFSET,
+                    self.last_const.imag[p, i] + self.TEXT_OFFSET,
                     text, c='magenta', fontsize=8
                 ))
         if self.v_plt is not None:
             self._init_quiver(self.last_const, self.data['gmi_grad'])
 
-    def update_data(self, const, hist=None):
+    def update_data(self, const: Modulation, hist=None):
         # https://matplotlib.org/stable/tutorials/advanced/blitting.html
-        if not np.iscomplexobj(const):
-            const = const[:, 0] + 1j * const[:, 1]
-        if const.ndim == 1:
-            const = np.vstack([const, const])
-
-        if self.last_const is None or const.shape[1] != self.last_const.shape[1]:
+        if self.last_const is None or const.points != self.last_const.points:
             self.last_const = const
             self._update_points()
+        else:
+            self.last_const = const
 
         # Initialising
         if self.h_plt is None and hist is not None:
             self.h_plt = [
                 self.ax[p].imshow(
-                hist[p], interpolation='bicubic', extent=[-self.LIM, self.LIM, -self.LIM, self.LIM],
-                origin='lower', cmap='sillekens', animated=True)  # kindlmann, sillekens
+                    hist[p], interpolation='bicubic', extent=[-self.LIM, self.LIM, -self.LIM, self.LIM],
+                    origin='lower', cmap='sillekens', animated=True)  # kindlmann, sillekens
                 for p in range(self.POLS)
             ]
             for p in range(self.POLS):
@@ -147,19 +175,6 @@ class ConstellationCanvas(FigureCanvas):
             # self.data.on('show_rx', lambda x: (self.h_plt0.set_visible(x), self._redraw()), now=False)
             # self.data.on('show_rx', lambda x: (self.h_plt1.set_visible(x), self._redraw()), now=False)
 
-        if self.c_plt is None and const is not None:
-            self.c_plt = [
-                self.ax[p].plot(const[p].real, const[p].imag, '.', c='magenta', animated=True)[0]
-                for p in range(self.POLS)
-            ]
-            for p in range(self.POLS):
-                self.c_plt[p].set_visible(self.data['show_c'])
-                self.data.on('show_c', lambda x: (self.c_plt[p].set_visible(x), self._redraw()), now=False)
-
-            for text in self._const_texts:
-                text.set_visible(self.data['show_bmap'])
-            self.data.on('show_bmap', lambda x: ([t.set_visible(x) for t in self._const_texts], self._redraw()), now=False)
-
         if self.v_plt is None and self.data['gmi_grad'] is not None:
             self._init_quiver(const, self.data['gmi_grad'])
             for p in range(self.POLS):
@@ -171,12 +186,12 @@ class ConstellationCanvas(FigureCanvas):
                 self.h_plt[p].set_data(np.zeros((128, 128)) if hist is None else hist[p])
         if self.c_plt is not None and self.data['show_c']:
             for p in range(self.POLS):
-                self.c_plt[p].set_data(const[p].real, const[p].imag)
+                self.c_plt[p].set_data(const.real[p], const.imag[p])
         if self.v_plt is not None and self.data['show_vec']:
             for p in range(self.POLS):
-                self.v_plt[p].set_offsets(np.array([const[p].real, const[p].imag]).T)
+                self.v_plt[p].set_offsets(np.array([const.real[p], const.imag[p]]).T)
             if hist is None or self.data['gmi_grad'] is None or np.any(np.isnan(self.data['gmi_grad'])):
-                m = np.zeros(const.shape[1])
+                m = np.zeros(const.points)
                 for p in range(self.POLS):
                     self.v_plt[p].set_UVC(m, m)
             else:
@@ -185,7 +200,7 @@ class ConstellationCanvas(FigureCanvas):
         if self.c_plt is not None and self.data['show_bmap']:
             for p in range(self.POLS):
                 for i, text in enumerate(self.const_text[p]):
-                    if np.all(np.isfinite(const[p, i])):
-                        text.set_x(const[p, i].real + self.TEXT_OFFSET)
-                        text.set_y(const[p, i].imag + self.TEXT_OFFSET)
+                    if np.all(np.isfinite(const.complex[p, i])):
+                        text.set_x(const.real[p, i] + self.TEXT_OFFSET)
+                        text.set_y(const.imag[p, i] + self.TEXT_OFFSET)
         self._redraw()

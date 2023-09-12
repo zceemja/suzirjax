@@ -1,5 +1,4 @@
 import threading
-import time
 
 import jax
 from PyQt5.QtCore import QObject, pyqtSignal
@@ -7,7 +6,8 @@ from PyQt5.QtWidgets import QWidget
 from jax import numpy as jnp
 import numpy as np
 
-from suzirjax.gui_helpers import Connector
+from suzirjax.gui import Connector
+from suzirjax.modulation import Modulation
 
 
 def norm(x: jnp.ndarray) -> jnp.ndarray:
@@ -20,7 +20,7 @@ jax_arr_type = type(jnp.array([]))
 
 
 class SimulationSignal(QObject):
-    result = pyqtSignal(jax_arr_type, jax_arr_type)
+    result = pyqtSignal(Modulation, jax_arr_type)
     start = pyqtSignal(float)
     complete = pyqtSignal()
 
@@ -29,7 +29,7 @@ class Simulation(QWidget):
     HIST_LIM = 1.69
     HIST_BINS = 128
 
-    def __init__(self, data: Connector, const: jnp.ndarray, parent=None):
+    def __init__(self, data: Connector, const: Modulation, parent=None):
         super().__init__(parent)
         self.signal = SimulationSignal()
         self._running = True
@@ -43,14 +43,15 @@ class Simulation(QWidget):
         self._single = False
 
     @property
-    def const(self):
+    def const(self) -> Modulation:
         return self._const
+
+    @const.setter
+    def const(self, value: Modulation):
+        self._const = value
 
     def start(self):
         self._thread.start()
-
-    def set_const(self, const):
-        self._const = const
 
     def pause(self):
         self._paused.clear()
@@ -88,21 +89,16 @@ class Simulation(QWidget):
 
     def _simulate(self):
         data = self.data.data.copy()
-        const = self._const.copy()
+        const: Modulation = self._const.copy()
 
         self.rng_key, key = jax.random.split(self.rng_key, num=2)
         tx_idx, rx, snr = data['channel'].propagate(const, key, 1 << data['seq_length'])
         # tx, _ = data['channel'].get_tx(const, self.rng_key, 1 << data['seq_length'])
 
-        const = jax.device_put(data['optimiser'].update(
-            const,
-            jnp.array([rx.flatten().real, rx.flatten().imag]).T,
-            snr.mean(),
-            tx_idx.flatten()
-        ))
-        rx /= np.sqrt((rx.real ** 2 + rx.imag ** 2).mean())
+        const = jax.device_put(data['optimiser'].update(const, rx, snr, tx_idx))
+        rx /= np.sqrt((abs(rx) ** 2).mean() / (const.modes / 2))
         hist = jnp.stack([self._make_hist(rx[0]), self._make_hist(rx[1])])
-        self.signal.result.emit(self._const / jnp.sqrt((abs(self._const) ** 2).mean() * 2), hist)
+        self.signal.result.emit(self._const, hist)
         self._const = const.copy()
         # const /= np.sqrt((abs(const) ** 2).mean() * 2)
         self._paused.clear()
