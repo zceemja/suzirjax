@@ -177,7 +177,7 @@ class Animator:
         plt.show()
 
 
-if __name__ == '__main__':
+def run_animator():
     import argparse
 
     parser = argparse.ArgumentParser(
@@ -255,3 +255,7 @@ if __name__ == '__main__':
         anim.animate_now(args.frames)
     else:
         anim.animate(args.output, args.frames, f'{args.channel}-{args.optimiser}')
+
+
+if __name__ == '__main__':
+    run_animator()

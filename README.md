@@ -35,6 +35,12 @@ being sent back to server.
 
 ### How to run?
 
+Using python packaging
+```shell
+python setup.py install
+suz
+```
+
 Preparation
 ```shell
 python -m venv env

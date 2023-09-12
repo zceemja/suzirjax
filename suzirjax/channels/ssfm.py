@@ -13,6 +13,7 @@ from suzirjax.channels import ChalmersQAMpy
 from suzirjax.channels.channel import register_channel
 from suzirjax.gui import *
 from PyQt5.QtWidgets import *
+import numpy as np
 
 
 @partial(jax.jit, static_argnums=[1, 2, 3, 4, 5, 6, 7, 8])

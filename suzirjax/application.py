@@ -4,7 +4,6 @@ Main GUI application container that glues everything together
 
 
 import sys
-
 import jax
 
 from suzirjax.gui.history import HistoryPlotWindow
@@ -14,13 +13,17 @@ from suzirjax.channels import CHANNELS
 from suzirjax.metric import METRIC_METHODS
 from suzirjax.modulation import MODULATIONS, get_modulation, load_from_file
 from suzirjax.optimiser import OPTIMISERS
+from suzirjax.resources import get_resource
 from suzirjax.simulation import Simulation
 from suzirjax.utils import register_cmaps
 
+from PyQt5.QtWidgets import *
+from PyQt5.QtGui import *
 from PyQt5.QtCore import QT_VERSION_STR
 
 import matplotlib
 import numpy as np
+LOGO = get_resource('logo.png')
 
 # TODO: maybe move somewhere more reasonable
 matplotlib.use('Qt5Agg')
@@ -37,7 +40,7 @@ class ApplicationWidget(QFrame):
 
         init_const = load_from_file(const_name)
         if init_const is None:
-            init_const = get_modulation("RAND")
+            init_const = get_modulation("32RAND")
             self.data.set('mod_name', "Random")
         else:
             self.data.set('mod_name', "Custom")
@@ -201,3 +204,36 @@ class ApplicationWidget(QFrame):
             self.data['mod_points'] = dlgc['mod_points']
             self.const_canvas.update_data(self.sim.const, None)
 
+
+class ApplicationWindow(QMainWindow):
+    def __init__(self, const_fname=None):
+        super().__init__()
+        self.setWindowTitle('Suzirjax')
+        self.setWindowIcon(QIcon(LOGO))
+        self.widget = ApplicationWidget(self, const_name=const_fname)
+        self.setCentralWidget(self.widget)
+        self.statusbar = self.statusBar()
+        self.statusbar.showMessage("Device: " + jax.devices()[0].device_kind)
+
+        centre_point = QDesktopWidget().availableGeometry().center()
+        geom = self.frameGeometry()
+        geom.moveCenter(centre_point)
+        self.move(geom.topLeft())
+
+    def except_hook(self, exc_type, exc_value, exc_tb):
+        import traceback
+        tb = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+        print(tb, file=sys.stderr)
+        error_area = QScrollArea()
+        error_area.setWidget(QLabel(tb))
+        if not make_dialog("Unexpected Exception", error_area, parent=self,
+                           buttons=QDialogButtonBox.Ignore | QDialogButtonBox.Abort).exec():
+            self.quit()
+
+
+def run_main_application():
+    app = QApplication(sys.argv)
+    window = ApplicationWindow(sys.argv[1] if len(sys.argv) == 2 else None)
+    sys.excepthook = window.except_hook
+    window.show()
+    app.exec()

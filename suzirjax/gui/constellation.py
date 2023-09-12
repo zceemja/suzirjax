@@ -3,6 +3,7 @@ Canvas component that displays received constellation points
 """
 
 import itertools
+import numpy as np
 
 import matplotlib.axes
 

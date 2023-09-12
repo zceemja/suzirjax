@@ -1,13 +1,8 @@
 import sys
 
 import jax
-from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QDesktopWidget, QDialogButtonBox, QScrollArea
-from suzirjax import utils
-from suzirjax.gui import make_dialog
-
+from suzirjax import run_main_application
 jax.config.update("jax_enable_x64", True)
-LOGO = utils.get_resource('logo.png')
 
 
 #
@@ -65,38 +60,5 @@ LOGO = utils.get_resource('logo.png')
 #         geom.moveCenter(centre_point)
 #         self.move(geom.topLeft())
 
-
-class ApplicationWindow(QMainWindow):
-    def __init__(self, const_fname=None):
-        from suzirjax.gui import ApplicationWidget
-
-        super().__init__()
-        self.setWindowTitle('Suzirjax')
-        self.setWindowIcon(QIcon(LOGO))
-        self.widget = ApplicationWidget(self, const_name=const_fname)
-        self.setCentralWidget(self.widget)
-        self.statusbar = self.statusBar()
-        self.statusbar.showMessage("Device: " + jax.devices()[0].device_kind)
-
-        centre_point = QDesktopWidget().availableGeometry().center()
-        geom = self.frameGeometry()
-        geom.moveCenter(centre_point)
-        self.move(geom.topLeft())
-
-    def except_hook(self, exc_type, exc_value, exc_tb):
-        import traceback
-        tb = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
-        print(tb, file=sys.stderr)
-        error_area = QScrollArea()
-        error_area.setWidget(QLabel(tb))
-        if not make_dialog("Unexpected Exception", error_area, parent=self,
-                           buttons=QDialogButtonBox.Ignore | QDialogButtonBox.Abort).exec():
-            app.quit()
-
-
 if __name__ == '__main__':
-    app = QApplication(sys.argv)
-    window = ApplicationWindow(sys.argv[1] if len(sys.argv) == 2 else None)
-    sys.excepthook = window.except_hook
-    window.show()
-    app.exec()
+    run_main_application()

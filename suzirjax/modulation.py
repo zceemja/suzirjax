@@ -186,7 +186,7 @@ def get_modulation(name: str, unit_power=True) -> Modulation:
 
 
 def load_from_file(file_name) -> Union[Modulation, None]:
-    if not os.path.exists(file_name):
+    if file_name is None or not os.path.exists(file_name):
         return None
     if file_name.lower().endswith('.npz'):
         data = np.load(file_name)

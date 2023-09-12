@@ -6,6 +6,7 @@ from PyQt5.QtWidgets import QWidget
 from typing import List, Tuple
 
 from suzirjax.modulation import Modulation
+import numpy as np
 
 # import matplotlib
 # matplotlib.use('module://backend_interagg')

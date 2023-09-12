@@ -1,13 +1,7 @@
 import numpy as np
-from os import path
 import matplotlib
 from matplotlib.colors import LinearSegmentedColormap, ListedColormap
-
-
-def get_resource(name) -> str:
-    _cdir = path.dirname(path.realpath(__file__))
-    return path.join(_cdir, "..", "resources", name)
-
+from suzirjax.resources import get_resource
 
 # Source: https://www.kennethmoreland.com/color-advice/
 _kindlmann_data = np.loadtxt(get_resource("kindlmann-table-float-0128.csv"), delimiter=",", skiprows=1)
@@ -26,5 +20,7 @@ sillekens_cmap = ListedColormap(np.load(get_resource("DrSillekensCMap.npy")), na
 
 
 def register_cmaps():
-    matplotlib.colormaps.register(kindlmann_cmap)
-    matplotlib.colormaps.register(sillekens_cmap)
+    if 'kindlmann' not in matplotlib.colormaps:
+        matplotlib.colormaps.register(kindlmann_cmap)
+    if 'sillekens' not in matplotlib.colormaps:
+        matplotlib.colormaps.register(sillekens_cmap)

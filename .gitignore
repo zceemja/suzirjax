@@ -5,6 +5,7 @@
 !requirements.txt
 
 # Python code
+!setup.py
 !suzirjax
 !suzirjax/**
 !suzirjax/*.py
