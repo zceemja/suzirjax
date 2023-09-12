@@ -37,8 +37,10 @@ being sent back to server.
 
 Using python packaging
 ```shell
+git clone https://github.com/zceemja/suzirjax.git
+cd suzirjax
 python setup.py install
-suz
+suzirjax
 ```
 
 Preparation
